@@ -136,7 +136,7 @@ jobs:
             }
 
             // GITHUB_TOKEN-created PRs do not recursively trigger pull_request workflows.
-            // Dispatch once per sync commit so required checks exist without daily reruns.
+            // Dispatch once per sync commit, retrying only when no active or final status exists.
             const runTitle = `build ${process.env.MERGE_SHA}`;
             const { data: runs } = await github.rest.actions.listWorkflowRuns({
               owner,
@@ -146,11 +146,23 @@ jobs:
               event: 'workflow_dispatch',
               per_page: 100
             });
-            const hasBuild = runs.workflow_runs.some(
+            const matchingRuns = runs.workflow_runs.filter(
               (run) => run.display_title === runTitle
             );
+            const activeStates = new Set(['queued', 'in_progress', 'waiting', 'requested', 'pending']);
+            const hasActiveBuild = matchingRuns.some((run) => activeStates.has(run.status));
 
-            if (!hasBuild) {
+            const { data: status } = await github.rest.repos.getCombinedStatusForRef({
+              owner,
+              repo,
+              ref: process.env.MERGE_SHA
+            });
+            const buildStatus = status.statuses.find(
+              (item) => item.context === 'MXU / trusted source build'
+            );
+            const hasFinalStatus = buildStatus && buildStatus.state !== 'pending';
+
+            if (!hasActiveBuild && !hasFinalStatus) {
               await github.rest.actions.createWorkflowDispatch({
                 owner,
                 repo,
@@ -161,6 +173,8 @@ jobs:
                 }
               });
               core.notice(`Dispatched the trusted build.yml for ${process.env.MERGE_SHA}.`);
+            } else if (hasActiveBuild) {
+              core.notice(`A trusted build is already active for ${process.env.MERGE_SHA}.`);
             } else {
-              core.notice(`build.yml already has a run for ${process.env.MERGE_SHA}.`);
+              core.notice(`A final trusted build status already exists for ${process.env.MERGE_SHA}: ${buildStatus.state}.`);
             }
