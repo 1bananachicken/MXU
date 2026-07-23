@@ -1,33 +1,58 @@
 name: build
+run-name: build ${{ inputs.source_ref || github.ref_name }}
 
 on:
   push:
     tags:
-      - "v*"
+      - 'v*'
     branches:
-      - "**"
+      - '**'
     paths:
-      - ".github/workflows/build.yml"
-      - "src/**"
-      - "src-tauri/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "vite.config.ts"
+      - '.github/workflows/build.yml'
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'vite.config.ts'
 
   pull_request:
     branches:
-      - "**"
-    paths:
-      - ".github/workflows/build.yml"
-      - "src/**"
-      - "src-tauri/**"
-      - "package.json"
-      - "pnpm-lock.yaml"
-      - "vite.config.ts"
+      - '**'
 
   workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Exact commit SHA to build with this trusted workflow
+        required: false
+        type: string
+
+permissions:
+  contents: read
 
 jobs:
+  mark-pending:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.source_ref != '' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - name: Mark source build pending
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+        with:
+          script: |
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.SOURCE_REF,
+              state: 'pending',
+              context: 'MXU / trusted source build',
+              description: 'Building with the reviewed maante workflow',
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });
+
   meta:
     runs-on: ubuntu-latest
     outputs:
@@ -36,7 +61,10 @@ jobs:
       is-release: ${{ startsWith(github.ref, 'refs/tags/v') }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+          persist-credentials: false
 
       - name: Get version
         id: version
@@ -61,63 +89,54 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+          persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 20
-          cache: "pnpm"
+          cache: 'pnpm'
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           targets: ${{ matrix.arch == 'x86_64' && 'x86_64-pc-windows-msvc' || 'aarch64-pc-windows-msvc' }}
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
-          workspaces: "src-tauri -> target"
-          shared-key: "windows-${{ matrix.arch }}"
+          workspaces: 'src-tauri -> target'
+          shared-key: 'windows-${{ matrix.arch }}'
           cache-on-failure: true
 
       - name: Install frontend dependencies
-        run: pnpm install
-
-      - name: Update version
-        shell: bash
-        run: |
-          VERSION="${{ needs.meta.outputs.version }}"
-          # Update package.json
-          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
-          # Update tauri.conf.json
-          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-          # Update Cargo.toml (only the package version at line start, not dependency versions)
-          sed -i "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-          echo "Updated version to $VERSION"
+        run: pnpm install --frozen-lockfile
 
       - name: Build Tauri app
-        run: pnpm tauri build --no-bundle --target ${{ matrix.arch == 'x86_64' && 'x86_64-pc-windows-msvc' || 'aarch64-pc-windows-msvc' }}
+        run: pnpm tauri build --no-bundle --target ${{ matrix.arch == 'x86_64' && 'x86_64-pc-windows-msvc' || 'aarch64-pc-windows-msvc' }} -- --locked
 
       - name: Prepare artifacts
         shell: bash
         run: |
           mkdir -p install
           TARGET_DIR="src-tauri/target/${{ matrix.arch == 'x86_64' && 'x86_64-pc-windows-msvc' || 'aarch64-pc-windows-msvc' }}/release"
-          cp -r "$TARGET_DIR/mxu.exe" install/ || true
-          cp -r "$TARGET_DIR/mxu.pdb" install/ || true
+          cp "$TARGET_DIR/MaaNTE.exe" install/
+          cp "$TARGET_DIR/MaaNTE.pdb" install/ || true
           cp LICENSE README.md install/ || true
           ls -la install/
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
-          name: MXU-win-${{ matrix.arch }}-${{ needs.meta.outputs.tag }}
-          path: "install"
+          name: MaaNTE-win-${{ matrix.arch }}-${{ needs.meta.outputs.tag }}
+          path: 'install'
 
   linux:
     needs: meta
@@ -129,7 +148,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+          persist-credentials: false
 
       - name: Install Linux dependencies
         run: |
@@ -137,55 +159,44 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 20
-          cache: "pnpm"
+          cache: 'pnpm'
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
-          workspaces: "src-tauri -> target"
-          shared-key: "linux-${{ matrix.arch }}"
+          workspaces: 'src-tauri -> target'
+          shared-key: 'linux-${{ matrix.arch }}'
           cache-on-failure: true
 
       - name: Install frontend dependencies
-        run: pnpm install
-
-      - name: Update version
-        run: |
-          VERSION="${{ needs.meta.outputs.version }}"
-          # Update package.json
-          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
-          # Update tauri.conf.json
-          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-          # Update Cargo.toml (only the package version at line start, not dependency versions)
-          sed -i "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-          echo "Updated version to $VERSION"
+        run: pnpm install --frozen-lockfile
 
       - name: Build Tauri app
-        run: pnpm tauri build --no-bundle
+        run: pnpm tauri build --no-bundle -- --locked
 
       - name: Prepare artifacts
         run: |
           mkdir -p install
-          cp -r src-tauri/target/release/mxu install/ || true
+          cp src-tauri/target/release/MaaNTE install/
           cp LICENSE README.md install/ || true
           ls -la install/
-          tar -czvf MXU-linux-${{ matrix.arch }}-${{ needs.meta.outputs.tag }}.tar.gz -C install .
+          tar -czvf MaaNTE-linux-${{ matrix.arch }}-${{ needs.meta.outputs.tag }}.tar.gz -C install .
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
-          name: MXU-linux-${{ matrix.arch }}-${{ needs.meta.outputs.tag }}
-          path: "MXU-linux-${{ matrix.arch }}-${{ needs.meta.outputs.tag }}.tar.gz"
+          name: MaaNTE-linux-${{ matrix.arch }}-${{ needs.meta.outputs.tag }}
+          path: 'MaaNTE-linux-${{ matrix.arch }}-${{ needs.meta.outputs.tag }}.tar.gz'
 
   macos:
     needs: meta
@@ -197,60 +208,95 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ inputs.source_ref || github.sha }}
+          persist-credentials: false
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v6
+        uses: pnpm/action-setup@b0f76dfb45f55f8421693e4803ac7bb65143bd34 # v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 20
-          cache: "pnpm"
+          cache: 'pnpm'
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
           targets: ${{ matrix.arch == 'x86_64' && 'x86_64-apple-darwin' || 'aarch64-apple-darwin' }}
 
       - name: Rust cache
-        uses: swatinem/rust-cache@v2
+        uses: swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
         with:
-          workspaces: "src-tauri -> target"
-          shared-key: "macos-${{ matrix.arch }}"
+          workspaces: 'src-tauri -> target'
+          shared-key: 'macos-${{ matrix.arch }}'
           cache-on-failure: true
 
       - name: Install frontend dependencies
-        run: pnpm install
-
-      - name: Update version
-        run: |
-          VERSION="${{ needs.meta.outputs.version }}"
-          # Update package.json
-          sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" package.json
-          # Update tauri.conf.json
-          sed -i '' "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION\"/" src-tauri/tauri.conf.json
-          # Update Cargo.toml (only the package version at line start, not dependency versions)
-          sed -i '' "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" src-tauri/Cargo.toml
-          echo "Updated version to $VERSION"
+        run: pnpm install --frozen-lockfile
 
       - name: Build Tauri app
-        run: pnpm tauri build --no-bundle --target ${{ matrix.arch == 'x86_64' && 'x86_64-apple-darwin' || 'aarch64-apple-darwin' }}
+        run: pnpm tauri build --no-bundle --target ${{ matrix.arch == 'x86_64' && 'x86_64-apple-darwin' || 'aarch64-apple-darwin' }} -- --locked
 
       - name: Prepare artifacts
         run: |
           mkdir -p install
-          cp -r src-tauri/target/${{ matrix.arch == 'x86_64' && 'x86_64-apple-darwin' || 'aarch64-apple-darwin' }}/release/mxu install/ || true
+          cp src-tauri/target/${{ matrix.arch == 'x86_64' && 'x86_64-apple-darwin' || 'aarch64-apple-darwin' }}/release/MaaNTE install/
           cp LICENSE README.md install/ || true
           ls -la install/
-          tar -czvf MXU-macos-${{ matrix.arch }}-${{ needs.meta.outputs.tag }}.tar.gz -C install .
+          tar -czvf MaaNTE-macos-${{ matrix.arch }}-${{ needs.meta.outputs.tag }}.tar.gz -C install .
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         if: always()
         with:
-          name: MXU-macos-${{ matrix.arch }}-${{ needs.meta.outputs.tag }}
-          path: "MXU-macos-${{ matrix.arch }}-${{ needs.meta.outputs.tag }}.tar.gz"
+          name: MaaNTE-macos-${{ matrix.arch }}-${{ needs.meta.outputs.tag }}
+          path: 'MaaNTE-macos-${{ matrix.arch }}-${{ needs.meta.outputs.tag }}.tar.gz'
+
+  report-source-build:
+    if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.source_ref != '' }}
+    needs: [meta, windows, linux, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      statuses: write
+    steps:
+      - name: Report source build result
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
+          META_RESULT: ${{ needs.meta.result }}
+          WINDOWS_RESULT: ${{ needs.windows.result }}
+          LINUX_RESULT: ${{ needs.linux.result }}
+          MACOS_RESULT: ${{ needs.macos.result }}
+        with:
+          script: |
+            const results = [
+              process.env.META_RESULT,
+              process.env.WINDOWS_RESULT,
+              process.env.LINUX_RESULT,
+              process.env.MACOS_RESULT
+            ];
+            const succeeded = results.every((result) => result === 'success');
+            const state = succeeded ? 'success' : 'failure';
+
+            await github.rest.repos.createCommitStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              sha: process.env.SOURCE_REF,
+              state,
+              context: 'MXU / trusted source build',
+              description: succeeded
+                ? 'Reviewed workflow build passed'
+                : `Build did not pass: ${results.join(', ')}`.slice(0, 140),
+              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            });
+
+            if (!succeeded) {
+              core.setFailed(`Source build failed: ${results.join(', ')}`);
+            }
 
   changelog:
     name: Generate changelog
@@ -260,12 +306,14 @@ jobs:
       release_body: ${{ steps.git-cliff.outputs.content }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
+          ref: ${{ inputs.source_ref || github.sha }}
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Generate a changelog
-        uses: orhun/git-cliff-action@v4
+        uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4
         id: git-cliff
         with:
           config: .github/cliff.toml
@@ -283,7 +331,7 @@ jobs:
 
     steps:
       - name: Download all artifacts
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
         with:
           path: artifacts
 
@@ -305,7 +353,7 @@ jobs:
           ls -la
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           tag_name: ${{ needs.meta.outputs.tag }}
           name: Release ${{ needs.meta.outputs.tag }}

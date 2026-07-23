@@ -25,7 +25,7 @@
 
 ### 依赖文件
 
-[MXU Releases](https://github.com/MistEO/MXU/releases) 中提供了单可执行文件（Windows 为 `mxu.exe`，Linux/macOS 为 `mxu`），您需要配置以下依赖：
+[MXU Releases](https://github.com/1bananachicken/MXU/releases) 中提供了单可执行文件（Windows 为 `MaaNTE.exe`，Linux/macOS 为 `MaaNTE`），您需要配置以下依赖：
 
 - [MaaFramework](https://github.com/MaaXYZ/MaaFramework/releases) 运行库 ( >= `v5.5.0-beta.1` ) ，将压缩包中的 `bin` 文件夹内容解压到 `maafw` 文件夹中
 - [interface.json](https://github.com/MaaXYZ/MaaFramework/blob/main/sample/interface.json) 及相关资源文件，请参考 [PI 协议文档](https://github.com/MaaXYZ/MaaFramework/blob/main/docs/zh_cn/3.3-ProjectInterfaceV2%E5%8D%8F%E8%AE%AE.md) 编写
@@ -34,7 +34,7 @@
 
 ```text
 your-project/
-├── mxu.exe (或 mxu)
+├── MaaNTE.exe (或 MaaNTE)
 ├── maafw/
 │   ├── MaaFramework.dll (Windows)
 │   ├── MaaToolkit.dll
@@ -43,7 +43,7 @@ your-project/
 └── resource/
 ```
 
-随后运行 `mxu.exe`（Windows）或 `./mxu`（Linux/macOS）即可！~
+随后运行 `MaaNTE.exe`（Windows）或 `./MaaNTE`（Linux/macOS）即可！~
 
 ### 命令行参数
 
@@ -60,13 +60,13 @@ MXU 支持以下启动参数：
 
 ```bash
 # 查看命令行帮助
-mxu.exe --help
+MaaNTE.exe --help
 
 # 使用系统自启动模式，并指定自动执行的实例名
-mxu.exe --autostart --instance "日常任务"
+MaaNTE.exe --autostart --instance "日常任务"
 
 # 自动执行完成后自动退出
-mxu.exe --autostart -i "日常任务" --quit-after-run
+MaaNTE.exe --autostart -i "日常任务" --quit-after-run
 ```
 
 ### 用户文件
@@ -139,7 +139,7 @@ pnpm tauri dev
 pnpm tauri build
 ```
 
-构建产物位于 `src-tauri/target/release/` 目录。
+构建产物位于 `src-tauri/target/release/` 目录，Windows 为 `MaaNTE.exe`，Linux/macOS 为 `MaaNTE`。
 
 ## 🤝 相关项目
 
