@@ -58,7 +58,7 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
-      is-release: ${{ startsWith(github.ref, 'refs/tags/v') }}
+      is-release: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
     steps:
       - name: Checkout
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -257,7 +257,7 @@ jobs:
 
   report-source-build:
     if: ${{ always() && github.event_name == 'workflow_dispatch' && inputs.source_ref != '' }}
-    needs: [meta, windows, linux, macos]
+    needs: [mark-pending, meta, windows, linux, macos]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -268,6 +268,7 @@ jobs:
         env:
           SOURCE_REF: ${{ inputs.source_ref }}
           META_RESULT: ${{ needs.meta.result }}
+          PENDING_RESULT: ${{ needs.mark-pending.result }}
           WINDOWS_RESULT: ${{ needs.windows.result }}
           LINUX_RESULT: ${{ needs.linux.result }}
           MACOS_RESULT: ${{ needs.macos.result }}
@@ -275,6 +276,7 @@ jobs:
           script: |
             const results = [
               process.env.META_RESULT,
+              process.env.PENDING_RESULT,
               process.env.WINDOWS_RESULT,
               process.env.LINUX_RESULT,
               process.env.MACOS_RESULT
