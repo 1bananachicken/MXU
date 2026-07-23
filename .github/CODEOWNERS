@@ -1,0 +1,8 @@
+# MaaNTE-maintained branding, build, and upstream synchronization inputs.
+/.github/workflows/ @1bananachicken
+/.github/CODEOWNERS @1bananachicken
+/package.json @1bananachicken
+/pnpm-lock.yaml @1bananachicken
+/src-tauri/Cargo.toml @1bananachicken
+/src-tauri/tauri.conf.json @1bananachicken
+/src-tauri/icons/ @1bananachicken

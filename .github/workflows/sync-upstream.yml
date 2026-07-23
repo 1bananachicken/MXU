@@ -1,0 +1,166 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream-mxu
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPOSITORY: MistEO/MXU
+  UPSTREAM_BRANCH: main
+  TARGET_BRANCH: maante
+  SYNC_BRANCH: bot/sync-upstream
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout target branch
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: maante
+          fetch-depth: 0
+
+      - name: Merge upstream into an isolated branch
+        id: merge
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch --no-tags origin "+refs/heads/${TARGET_BRANCH}:refs/remotes/origin/${TARGET_BRANCH}"
+          git fetch --no-tags upstream "+refs/heads/${UPSTREAM_BRANCH}:refs/remotes/upstream/${UPSTREAM_BRANCH}"
+          git fetch --no-tags origin "+refs/heads/${SYNC_BRANCH}:refs/remotes/origin/${SYNC_BRANCH}" || true
+
+          if git merge-base --is-ancestor "upstream/${UPSTREAM_BRANCH}" "origin/${TARGET_BRANCH}"; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "The target branch already contains upstream/${UPSTREAM_BRANCH}."
+            exit 0
+          fi
+
+          if git show-ref --verify --quiet "refs/remotes/origin/${SYNC_BRANCH}"; then
+            SYNC_FIRST_PARENT="$(git rev-parse "origin/${SYNC_BRANCH}^1" 2>/dev/null || true)"
+            SYNC_SECOND_PARENT="$(git rev-parse "origin/${SYNC_BRANCH}^2" 2>/dev/null || true)"
+            TARGET_SHA="$(git rev-parse "origin/${TARGET_BRANCH}")"
+            UPSTREAM_SHA="$(git rev-parse "upstream/${UPSTREAM_BRANCH}")"
+
+            if [ "$SYNC_FIRST_PARENT" = "$TARGET_SHA" ] && [ "$SYNC_SECOND_PARENT" = "$UPSTREAM_SHA" ]; then
+              echo "changed=true" >> "$GITHUB_OUTPUT"
+              echo "branch_updated=false" >> "$GITHUB_OUTPUT"
+              echo "upstream_sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
+              echo "merge_sha=$(git rev-parse "origin/${SYNC_BRANCH}")" >> "$GITHUB_OUTPUT"
+              echo "The existing synchronization branch already contains the current target and upstream commits."
+              exit 0
+            fi
+          fi
+
+          git switch --force-create sync-upstream-work "origin/${TARGET_BRANCH}"
+          if ! git merge --no-ff "upstream/${UPSTREAM_BRANCH}" -m "chore: sync upstream MistEO/MXU"; then
+            git status --short
+            git merge --abort || true
+            echo "::error::Upstream merge has conflicts; ${TARGET_BRANCH} and ${SYNC_BRANCH} were not modified."
+            exit 1
+          fi
+
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "branch_updated=true" >> "$GITHUB_OUTPUT"
+          echo "upstream_sha=$(git rev-parse "upstream/${UPSTREAM_BRANCH}")" >> "$GITHUB_OUTPUT"
+          echo "merge_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          git push --force-with-lease="refs/heads/${SYNC_BRANCH}" origin "HEAD:refs/heads/${SYNC_BRANCH}"
+
+      - name: Create or update pull request
+        if: steps.merge.outputs.changed == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7
+        env:
+          TARGET_BRANCH: ${{ env.TARGET_BRANCH }}
+          SYNC_BRANCH: ${{ env.SYNC_BRANCH }}
+          UPSTREAM_SHA: ${{ steps.merge.outputs.upstream_sha }}
+          MERGE_SHA: ${{ steps.merge.outputs.merge_sha }}
+        with:
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const title = 'chore: sync upstream MXU main';
+            const body = [
+              'Automated synchronization from `MistEO/MXU:main`.',
+              '',
+              `- Upstream commit: \`${process.env.UPSTREAM_SHA}\``,
+              `- Merge commit: \`${process.env.MERGE_SHA}\``,
+              '',
+              'This pull request targets `maante`; the workflow never pushes directly to that branch.'
+            ].join('\n');
+            const head = `${owner}:${process.env.SYNC_BRANCH}`;
+
+            const { data: pulls } = await github.rest.pulls.list({
+              owner,
+              repo,
+              state: 'open',
+              base: process.env.TARGET_BRANCH,
+              head
+            });
+
+            if (pulls.length > 0) {
+              if (pulls[0].title !== title || pulls[0].body !== body) {
+                await github.rest.pulls.update({
+                  owner,
+                  repo,
+                  pull_number: pulls[0].number,
+                  title,
+                  body
+                });
+                core.notice(`Updated pull request #${pulls[0].number}.`);
+              } else {
+                core.notice(`Pull request #${pulls[0].number} is already current.`);
+              }
+            } else {
+              const { data: pull } = await github.rest.pulls.create({
+                owner,
+                repo,
+                title,
+                body,
+                base: process.env.TARGET_BRANCH,
+                head: process.env.SYNC_BRANCH
+              });
+              core.notice(`Created pull request #${pull.number}.`);
+            }
+
+            // GITHUB_TOKEN-created PRs do not recursively trigger pull_request workflows.
+            // Dispatch once per sync commit so required checks exist without daily reruns.
+            const runTitle = `build ${process.env.MERGE_SHA}`;
+            const { data: runs } = await github.rest.actions.listWorkflowRuns({
+              owner,
+              repo,
+              workflow_id: 'build.yml',
+              branch: process.env.TARGET_BRANCH,
+              event: 'workflow_dispatch',
+              per_page: 100
+            });
+            const hasBuild = runs.workflow_runs.some(
+              (run) => run.display_title === runTitle
+            );
+
+            if (!hasBuild) {
+              await github.rest.actions.createWorkflowDispatch({
+                owner,
+                repo,
+                workflow_id: 'build.yml',
+                ref: process.env.TARGET_BRANCH,
+                inputs: {
+                  source_ref: process.env.MERGE_SHA
+                }
+              });
+              core.notice(`Dispatched the trusted build.yml for ${process.env.MERGE_SHA}.`);
+            } else {
+              core.notice(`build.yml already has a run for ${process.env.MERGE_SHA}.`);
+            }
