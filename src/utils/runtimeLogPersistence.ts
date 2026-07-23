@@ -6,7 +6,7 @@ const STORAGE_VERSION = 1;
 const STORAGE_WRITE_DEBOUNCE_MS = 250;
 
 let pendingPersistedLogsPayload: string | null = null;
-let pendingPersistedLogsTimeout: ReturnType<typeof window.setTimeout> | null = null;
+let pendingPersistedLogsTimeout: number | null = null;
 let pendingPersistedLogsIdleCallback: number | null = null;
 
 interface PersistedLogEntry {
