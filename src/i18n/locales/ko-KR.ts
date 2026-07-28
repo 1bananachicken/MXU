@@ -115,7 +115,8 @@ export default {
     confirmBeforeDelete: '삭제 작업 확인',
     confirmBeforeDeleteHint: '삭제/목록 비우기 등 위험한 작업 전에 확인 대화 상자를 표시합니다',
     helpImproveSoftware: '소프트웨어 개선에 참여',
-    helpImproveSoftwareHint: '충돌 및 작업 통계를 익명으로 전송하여 일반적인 문제를 찾는 데 도움을 줍니다.',
+    helpImproveSoftwareHint:
+      '충돌 및 작업 통계를 익명으로 전송하여 일반적인 문제를 찾는 데 도움을 줍니다.',
     helpImproveSoftwareDisabledHint: '디버그 / 개발 버전에서는 익명 데이터 전송이 비활성화됩니다',
     maxLogsPerInstance: '인스턴스당 로그 최대 개수',
     maxLogsPerInstanceHint: '한도를 초과하면 가장 오래된 로그가 자동으로 삭제됩니다(권장 500~2000)',
