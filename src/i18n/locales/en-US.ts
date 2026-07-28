@@ -585,6 +585,7 @@ export default {
   // Welcome dialog
   welcome: {
     dismiss: 'Got it',
+    viewAgain: 'View welcome message',
   },
 
   // Onboarding

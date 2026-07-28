@@ -579,6 +579,7 @@ export default {
   // ウェルカムダイアログ
   welcome: {
     dismiss: '了解しました',
+    viewAgain: 'ウェルカムメッセージを表示',
   },
 
   // 新規ユーザーガイド
