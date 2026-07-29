@@ -383,6 +383,17 @@ export default {
     win32: 'Windows ウィンドウ',
     wlroots: 'WlRoots (Linux)',
     playcover: 'PlayCover (macOS)',
+    macos: 'macOS ウィンドウ',
+    macosPermissionsRequired:
+      '画面収録とアクセシビリティの権限が必要です。macOSの「システム設定」>「プライバシーとセキュリティ」で許可してから、もう一度お試しください。',
+    macosUnsupportedPlatform:
+      'macOS ネイティブウィンドウコントローラーは macOS でのみ使用できます。',
+    macosVersionRequired:
+      'macOS ネイティブウィンドウコントローラーには MaaFramework v5.10.0-beta.1 以降が必要です。',
+    macosSystemVersionRequired:
+      'macOS ネイティブウィンドウコントローラーには macOS 14.0 以降が必要です。',
+    macosSystemVersionDetectionFailed:
+      '現在の macOS バージョンを判定できませんでした。詳細はログを確認してください。',
     gamepad: 'ゲームパッド',
     connecting: '接続中...',
     connected: '接続済み',
