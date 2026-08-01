@@ -97,6 +97,10 @@ export default {
     hotkeysGlobal: 'グローバルショートカット',
     hotkeysGlobalHint: 'ウィンドウ非アクティブ時もショートカットを有効にする',
     hotkeysGlobalOnlyStart: 'グローバルモードでは開始のみ有効',
+    hotkeysGlobalConflict:
+      'ショートカット {{combo}} は既に使用されているため、グローバルショートカットは現在無効です。別のキーに変更するか、他のプログラムや重複起動したインスタンスが占有していないか確認してください。',
+    hotkeysGlobalRegisterFailed:
+      'グローバルショートカット {{combo}} の登録に失敗しました：{{error}}',
     minimizeToTray: '閉じる時にトレイに最小化',
     minimizeToTrayHint: '閉じるボタンをクリックすると、終了せずにシステムトレイに隠れます',
     autoStart: 'スタートアップ時に起動',
@@ -112,6 +116,10 @@ export default {
       '手動でアプリを開く際も、上で選択した設定を自動実行します（無効な場合はシステム起動時のみ実行）',
     confirmBeforeDelete: '削除操作の前に確認する',
     confirmBeforeDeleteHint: '削除/一覧クリア等の危険な操作の前に確認ダイアログを表示します',
+    helpImproveSoftware: 'ソフトウェアの改善に協力',
+    helpImproveSoftwareHint:
+      'クラッシュとタスク統計を匿名で送信し、よくある問題の発見に役立てます。',
+    helpImproveSoftwareDisabledHint: 'デバッグ / 開発版のため、匿名データ送信は無効になっています',
     maxLogsPerInstance: 'インスタンスあたりのログ上限',
     maxLogsPerInstanceHint: '上限を超えると古いログから自動的に破棄します（推奨 500～2000）',
     resetWindowLayout: 'ウィンドウレイアウトをリセット',
@@ -375,6 +383,17 @@ export default {
     win32: 'Windows ウィンドウ',
     wlroots: 'WlRoots (Linux)',
     playcover: 'PlayCover (macOS)',
+    macos: 'macOS ウィンドウ',
+    macosPermissionsRequired:
+      '画面収録とアクセシビリティの権限が必要です。macOSの「システム設定」>「プライバシーとセキュリティ」で許可してから、もう一度お試しください。',
+    macosUnsupportedPlatform:
+      'macOS ネイティブウィンドウコントローラーは macOS でのみ使用できます。',
+    macosVersionRequired:
+      'macOS ネイティブウィンドウコントローラーには MaaFramework v5.10.0-beta.1 以降が必要です。',
+    macosSystemVersionRequired:
+      'macOS ネイティブウィンドウコントローラーには macOS 14.0 以降が必要です。',
+    macosSystemVersionDetectionFailed:
+      '現在の macOS バージョンを判定できませんでした。詳細はログを確認してください。',
     gamepad: 'ゲームパッド',
     connecting: '接続中...',
     connected: '接続済み',
@@ -576,6 +595,7 @@ export default {
   // ウェルカムダイアログ
   welcome: {
     dismiss: '了解しました',
+    viewAgain: 'ウェルカムメッセージを表示',
   },
 
   // 新規ユーザーガイド
