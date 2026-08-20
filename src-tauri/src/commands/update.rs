@@ -2,10 +2,58 @@
 //!
 //! 提供解压、增量/全量更新、文件移动等功能
 
-use log::{info, warn};
+use std::path::Path;
+use std::sync::Arc;
+
+use log::{error, info, warn};
+use tauri::State;
 
 use super::file_ops::get_exe_dir;
+use super::maa_agent::quiesce_all_for_update;
 use super::types::ChangesJson;
+use super::types::MaaState;
+use super::update_transaction::PreparedUpdate;
+
+/// 校验更新计划、停止全部 Maa 运行时并以单个文件事务安装更新。
+#[tauri::command]
+pub async fn install_prepared_update(
+    state: State<'_, Arc<MaaState>>,
+    extract_dir: String,
+    target_dir: String,
+) -> Result<(), String> {
+    info!(
+        "install_prepared_update called: extract_dir={}, target_dir={}",
+        extract_dir, target_dir
+    );
+
+    let prepared = tauri::async_runtime::spawn_blocking(move || {
+        PreparedUpdate::prepare(Path::new(&extract_dir), Path::new(&target_dir))
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    let mut update_permit = state.update_coordinator.clone().begin_update().await?;
+    let maa_state = state.inner().clone();
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        quiesce_all_for_update(&maa_state)?;
+        prepared.install()
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+
+    match result {
+        Ok(()) => {
+            update_permit.keep_runtime_closed();
+            info!("install_prepared_update success; runtime remains closed until restart");
+            Ok(())
+        }
+        Err(error) => {
+            error!("install_prepared_update failed: {}", error);
+            Err(error)
+        }
+    }
+}
 
 /// 解压压缩文件到指定目录，支持 zip 和 tar.gz/tgz 格式
 #[tauri::command]
@@ -111,32 +159,69 @@ pub fn cleanup_dir_contents(dir: &std::path::Path) -> (usize, usize) {
     let mut deleted = 0;
     let mut failed = 0;
 
-    if let Ok(entries) = std::fs::read_dir(dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_dir() {
-                // 递归清理子目录
-                let (d, f) = cleanup_dir_contents(&path);
-                deleted += d;
-                failed += f;
-                // 尝试删除空目录
-                if std::fs::remove_dir(&path).is_ok() {
-                    deleted += 1;
-                }
-            } else {
-                // 删除文件
-                match std::fs::remove_file(&path) {
-                    Ok(()) => deleted += 1,
-                    Err(_) => failed += 1,
+    match std::fs::read_dir(dir) {
+        Ok(entries) => {
+            for entry in entries {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(error) => {
+                        log_cleanup_error("read_dir_entry", dir, &error);
+                        failed += 1;
+                        continue;
+                    }
+                };
+                let path = entry.path();
+                if path.is_dir() {
+                    // 递归清理子目录
+                    let (d, f) = cleanup_dir_contents(&path);
+                    deleted += d;
+                    failed += f;
+                    // 尝试删除空目录
+                    match std::fs::remove_dir(&path) {
+                        Ok(()) => deleted += 1,
+                        Err(error) if path.exists() => {
+                            log_cleanup_error("remove_dir", &path, &error);
+                            failed += 1;
+                        }
+                        Err(_) => {}
+                    }
+                } else {
+                    // 删除文件
+                    match std::fs::remove_file(&path) {
+                        Ok(()) => deleted += 1,
+                        Err(error) => {
+                            log_cleanup_error("remove_file", &path, &error);
+                            failed += 1;
+                        }
+                    }
                 }
             }
+        }
+        Err(error) => {
+            log_cleanup_error("read_dir", dir, &error);
+            failed += 1;
         }
     }
 
     // 尝试删除根目录本身
-    let _ = std::fs::remove_dir(dir);
+    if let Err(error) = std::fs::remove_dir(dir) {
+        if dir.exists() {
+            log_cleanup_error("remove_dir", dir, &error);
+            failed += 1;
+        }
+    }
 
     (deleted, failed)
+}
+
+fn log_cleanup_error(operation: &str, path: &std::path::Path, error: &std::io::Error) {
+    warn!(
+        "update cleanup failed: op={} path={} error={} raw_os_error={:?}",
+        operation,
+        path.display(),
+        error,
+        error.raw_os_error()
+    );
 }
 
 /// 将文件或目录移动到程序目录下的 cache/old 文件夹，处理重名冲突
@@ -209,161 +294,8 @@ pub fn move_to_old_folder(source: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 
-/// 删除文件或目录（目录递归删除）
-fn remove_path(path: &std::path::Path) -> std::io::Result<()> {
-    if path.is_dir() {
-        std::fs::remove_dir_all(path)
-    } else {
-        std::fs::remove_file(path)
-    }
-}
-
-/// 规范化增量包中的相对路径，移除常见前缀（./ .\ / \）
-fn normalize_relative_path(raw: &str) -> &str {
-    let mut s = raw.trim();
-    loop {
-        if let Some(stripped) = s.strip_prefix("./") {
-            s = stripped;
-        } else if let Some(stripped) = s.strip_prefix(".\\") {
-            s = stripped;
-        } else if let Some(stripped) = s.strip_prefix('/') {
-            s = stripped;
-        } else if let Some(stripped) = s.strip_prefix('\\') {
-            s = stripped;
-        } else {
-            break;
-        }
-    }
-    s
-}
-
-/// 应用增量更新：将 deleted 中的文件移动到 old 文件夹，然后复制新文件
-/// 即使移动旧文件失败，也会继续复制新文件，确保程序可用
-#[tauri::command]
-pub fn apply_incremental_update(
-    extract_dir: String,
-    target_dir: String,
-    deleted_files: Vec<String>,
-) -> Result<(), String> {
-    info!("apply_incremental_update called");
-    info!("extract_dir: {}, target_dir: {}", extract_dir, target_dir);
-    info!("deleted_files: {:?}", deleted_files);
-
-    let target_path = std::path::Path::new(&target_dir);
-    let mut move_errors: Vec<String> = Vec::new();
-
-    // 1. 尝试将 deleted 中列出的文件移动到 old 文件夹（失败时兜底直接删除）
-    for file in &deleted_files {
-        // 规范化 changes.json 里的相对路径，避免前导分隔符导致 join 偏离 target_dir
-        let normalized = normalize_relative_path(file);
-        let file_path = target_path.join(normalized);
-        if file_path.exists() {
-            if let Err(e) = move_to_old_folder(&file_path) {
-                warn!("移动旧文件失败（将继续更新）: {}", e);
-                move_errors.push(e);
-                // 兜底：即使无法备份到 old，也要确保 deleted 文件被删除
-                let remove_result = remove_path(&file_path);
-                if let Err(remove_err) = remove_result {
-                    warn!(
-                        "兜底删除失败（可能残留旧文件）: {} -> {}",
-                        file_path.display(),
-                        remove_err
-                    );
-                } else {
-                    info!("已兜底删除 deleted 文件: {}", file_path.display());
-                }
-            }
-        }
-    }
-
-    // 2. 复制新包内容到目标目录（覆盖）- 这一步必须执行
-    copy_dir_contents(&extract_dir, &target_dir, Some(&["changes.json"]))?;
-
-    if !move_errors.is_empty() {
-        info!(
-            "apply_incremental_update completed with {} move warnings",
-            move_errors.len()
-        );
-    } else {
-        info!("apply_incremental_update success");
-    }
-    Ok(())
-}
-
-/// 应用全量更新：将与新包根目录同名的文件夹/文件移动到 old 文件夹，然后复制新文件
-/// 即使移动旧文件失败，也会继续复制新文件，确保程序可用
-#[tauri::command]
-pub fn apply_full_update(extract_dir: String, target_dir: String) -> Result<(), String> {
-    info!("apply_full_update called");
-    info!("extract_dir: {}, target_dir: {}", extract_dir, target_dir);
-
-    let extract_path = std::path::Path::new(&extract_dir);
-    let target_path = std::path::Path::new(&target_dir);
-    let mut move_errors: Vec<String> = Vec::new();
-
-    // 1. 获取解压目录中的根级条目
-    let entries: Vec<_> = std::fs::read_dir(extract_path)
-        .map_err(|e| format!("无法读取解压目录: {}", e))?
-        .filter_map(|e| e.ok())
-        .collect();
-
-    // 2. 尝试将目标目录中与新包同名的文件/文件夹移动到 old 文件夹（失败不阻断）
-    for entry in &entries {
-        let name = entry.file_name();
-        let target_item = target_path.join(&name);
-
-        // 跳过 changes.json
-        if name == "changes.json" {
-            continue;
-        }
-
-        if target_item.exists() {
-            if let Err(e) = move_to_old_folder(&target_item) {
-                warn!("移动旧文件失败（将继续更新）: {}", e);
-                move_errors.push(e);
-                // 兜底：全量更新若无法备份旧目录，直接删除后再复制，避免残留已移除文件
-                if let Err(remove_err) = remove_path(&target_item) {
-                    warn!(
-                        "全量更新兜底删除失败（可能残留旧文件）: {} -> {}",
-                        target_item.display(),
-                        remove_err
-                    );
-                } else {
-                    info!("全量更新已兜底删除旧条目: {}", target_item.display());
-                }
-            }
-        }
-    }
-
-    // 3. 复制新包内容到目标目录 - 这一步必须执行
-    copy_dir_contents(&extract_dir, &target_dir, Some(&["changes.json"]))?;
-
-    if !move_errors.is_empty() {
-        info!(
-            "apply_full_update completed with {} move warnings",
-            move_errors.len()
-        );
-    } else {
-        info!("apply_full_update success");
-    }
-    Ok(())
-}
-
-/// 复制单个文件，先尝试将目标文件移动到 old 目录再复制
-/// 如果移动失败，直接尝试覆盖（确保新文件能被复制）
-fn copy_file_with_move_old(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
-    // 如果目标文件存在，先尝试移动到 old 目录
-    if dst.exists() {
-        if let Err(e) = move_to_old_folder(dst) {
-            warn!("移动旧文件到 old 目录失败，将直接覆盖: {}", e);
-            // 移动失败时，尝试直接删除旧文件以便覆盖
-            if let Err(del_err) = std::fs::remove_file(dst) {
-                warn!("删除旧文件也失败: {}，尝试直接覆盖", del_err);
-            }
-        }
-    }
-
-    // 复制新文件
+/// 复制单个文件。
+fn copy_file(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
     std::fs::copy(src, dst).map_err(|e| {
         format!(
             "无法复制文件 [{}] -> [{}]: {}",
@@ -404,7 +336,7 @@ fn copy_dir_contents(src: &str, dst: &str, skip_files: Option<&[&str]>) -> Resul
         if src_item.is_dir() {
             copy_dir_recursive(&src_item, &dst_item)?;
         } else {
-            copy_file_with_move_old(&src_item, &dst_item)?;
+            copy_file(&src_item, &dst_item)?;
         }
     }
 
@@ -425,7 +357,7 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()
         if src_item.is_dir() {
             copy_dir_recursive(&src_item, &dst_item)?;
         } else {
-            copy_file_with_move_old(&src_item, &dst_item)?;
+            copy_file(&src_item, &dst_item)?;
         }
     }
 

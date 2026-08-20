@@ -710,8 +710,9 @@ pub async fn run_pretask(
 
 /// 重新尝试加载 MaaFramework 库
 #[tauri::command]
-pub async fn retry_load_maa_library() -> Result<String, String> {
+pub async fn retry_load_maa_library(state: State<'_, Arc<MaaState>>) -> Result<String, String> {
     info!("retry_load_maa_library");
+    let _runtime_permit = state.update_coordinator.runtime_operation().await?;
 
     let maafw_dir = get_maafw_dir()?;
     if !maafw_dir.exists() {
