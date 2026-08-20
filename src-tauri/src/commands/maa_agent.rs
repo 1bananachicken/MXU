@@ -525,6 +525,7 @@ pub async fn start_tasks_impl(
     reset_state: bool,
     controller_info: Option<ControllerInfo>,
 ) -> Result<Vec<i64>, String> {
+    let _runtime_permit = maa_state.update_coordinator.runtime_operation().await?;
     info!("start_tasks_impl called");
 
     info!("instance_id: {}", instance_id);
@@ -832,19 +833,124 @@ pub async fn maa_start_tasks(
     .await
 }
 
-/// 停止所有 Agent 的核心实现（Tauri invoke 和 HTTP handler 共享）
-pub fn stop_agent_impl(maa_state: &Arc<MaaState>, instance_id: &str) -> Result<(), String> {
+fn stop_agent_handles(
+    clients: Vec<AgentClient>,
+    mut children: Vec<std::process::Child>,
+    timeout: Duration,
+) -> Result<(), String> {
+    for client in clients {
+        if let Err(error) = client.disconnect() {
+            warn!("AgentClient disconnect failed: {}", error);
+        }
+    }
+
+    let deadline = Instant::now() + timeout;
+    loop {
+        let mut remaining = 0;
+        for child in &mut children {
+            match child.try_wait() {
+                Ok(Some(_)) => {}
+                Ok(None) => remaining += 1,
+                Err(error) => {
+                    warn!("Agent try_wait failed: pid={}, error={}", child.id(), error);
+                    remaining += 1;
+                }
+            }
+        }
+
+        if remaining == 0 || Instant::now() >= deadline {
+            break;
+        }
+        thread::sleep(Duration::from_millis(100));
+    }
+
+    let mut errors = Vec::new();
+    for child in &mut children {
+        let must_kill = match child.try_wait() {
+            Ok(Some(_)) => false,
+            Ok(None) => true,
+            Err(error) => {
+                warn!(
+                    "Agent final try_wait failed: pid={}, error={}",
+                    child.id(),
+                    error
+                );
+                true
+            }
+        };
+
+        if must_kill {
+            warn!(
+                "Agent still alive after timeout, killing: pid={}",
+                child.id()
+            );
+            match child.kill() {
+                Ok(()) => {
+                    if let Err(error) = wait_for_child_exit(child, Duration::from_secs(2)) {
+                        errors.push(error);
+                    }
+                }
+                Err(kill_error) => match child.try_wait() {
+                    Ok(Some(_)) => {}
+                    Ok(None) | Err(_) => errors.push(format!(
+                        "Failed to kill agent {}: {}",
+                        child.id(),
+                        kill_error
+                    )),
+                },
+            }
+        }
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
+}
+
+fn wait_for_child_exit(child: &mut std::process::Child, timeout: Duration) -> Result<(), String> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return Ok(()),
+            Ok(None) if Instant::now() < deadline => {
+                thread::sleep(Duration::from_millis(50));
+            }
+            Ok(None) => {
+                return Err(format!(
+                    "Agent did not exit after kill: pid={}, timeout_ms={}",
+                    child.id(),
+                    timeout.as_millis()
+                ));
+            }
+            Err(error) => {
+                return Err(format!(
+                    "Failed to wait agent {} after kill: {}",
+                    child.id(),
+                    error
+                ));
+            }
+        }
+    }
+}
+
+fn take_instance_agents(
+    maa_state: &Arc<MaaState>,
+    instance_id: &str,
+) -> Result<(Vec<AgentClient>, Vec<std::process::Child>), String> {
+    let mut instances = maa_state.instances.lock().map_err(|e| e.to_string())?;
+    let instance = instances.get_mut(instance_id).ok_or("Instance not found")?;
+    Ok((
+        std::mem::take(&mut instance.agent_clients),
+        std::mem::take(&mut instance.agent_children),
+    ))
+}
+
+/// 停止所有 Agent 的核心实现（Tauri invoke 和 HTTP handler 共享）。
+pub async fn stop_agent_impl(maa_state: &Arc<MaaState>, instance_id: &str) -> Result<(), String> {
     info!("stop_agent_impl called for instance: {}", instance_id);
-
-    let (clients, children) = {
-        let mut instances = maa_state.instances.lock().map_err(|e| e.to_string())?;
-        let instance = instances.get_mut(instance_id).ok_or("Instance not found")?;
-
-        (
-            std::mem::take(&mut instance.agent_clients),
-            std::mem::take(&mut instance.agent_children),
-        )
-    };
+    let (clients, children) = take_instance_agents(maa_state, instance_id)?;
 
     if clients.is_empty() && children.is_empty() {
         debug!("[stop_agent] No agents to stop");
@@ -852,54 +958,111 @@ pub fn stop_agent_impl(maa_state: &Arc<MaaState>, instance_id: &str) -> Result<(
     }
 
     info!(
-        "[stop_agent] Stopping {} agent client(s) and {} child process(es) in background...",
+        "[stop_agent] Stopping {} agent client(s) and {} child process(es)...",
         clients.len(),
         children.len()
     );
-
-    thread::spawn(move || {
-        for client in clients {
-            let _ = client.disconnect();
-        }
-
-        for (i, mut child) in children.into_iter().enumerate() {
-            debug!("Waiting for agent process #{} to exit...", i);
-
-            let start = std::time::Instant::now();
-            let timeout = std::time::Duration::from_secs(5);
-            let mut exited = false;
-
-            while start.elapsed() < timeout {
-                match child.try_wait() {
-                    Ok(Some(_)) => {
-                        exited = true;
-                        break;
-                    }
-                    Ok(None) => {
-                        thread::sleep(std::time::Duration::from_millis(100));
-                    }
-                    Err(e) => {
-                        error!("Error waiting for agent #{}: {}", i, e);
-                        break;
-                    }
-                }
-            }
-
-            if !exited {
-                warn!("Agent process #{} did not exit in time, killing it...", i);
-                let _ = child.kill();
-                let _ = child.wait();
-            } else {
-                info!("Background: Agent #{} child process exited", i);
-            }
-        }
-    });
-
-    Ok(())
+    tauri::async_runtime::spawn_blocking(move || {
+        stop_agent_handles(clients, children, Duration::from_secs(5))
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// 停止所有 Agent 并断开连接 — Tauri invoke 入口，委托给 stop_agent_impl
 #[tauri::command]
-pub fn maa_stop_agent(state: State<'_, Arc<MaaState>>, instance_id: String) -> Result<(), String> {
-    stop_agent_impl(&state, &instance_id)
+pub async fn maa_stop_agent(
+    state: State<'_, Arc<MaaState>>,
+    instance_id: String,
+) -> Result<(), String> {
+    stop_agent_impl(&state, &instance_id).await
+}
+
+/// 停止全部任务和 Agent，并释放所有 Maa 运行时句柄。
+pub fn quiesce_all_for_update(maa_state: &Arc<MaaState>) -> Result<(), String> {
+    let taskers: Vec<(String, Tasker)> = {
+        let instances = maa_state.instances.lock().map_err(|e| e.to_string())?;
+        instances
+            .iter()
+            .filter_map(|(id, instance)| {
+                instance
+                    .tasker
+                    .as_ref()
+                    .map(|tasker| (id.clone(), tasker.clone()))
+            })
+            .collect()
+    };
+
+    let mut errors = Vec::new();
+    for (instance_id, tasker) in &taskers {
+        if tasker.running() {
+            if let Err(error) = tasker.post_stop() {
+                errors.push(format!(
+                    "Failed to stop tasker for instance {}: {}",
+                    instance_id, error
+                ));
+            }
+        }
+    }
+
+    let task_deadline = Instant::now() + Duration::from_secs(5);
+    while taskers.iter().any(|(_, tasker)| tasker.running()) && Instant::now() < task_deadline {
+        thread::sleep(Duration::from_millis(100));
+    }
+    for (instance_id, tasker) in &taskers {
+        if tasker.running() {
+            errors.push(format!(
+                "Tasker did not stop within 5 seconds: instance={}",
+                instance_id
+            ));
+        }
+    }
+
+    let (clients, children, taskers_to_drop, controllers_to_drop, resources_to_drop) = {
+        let mut instances = maa_state.instances.lock().map_err(|e| e.to_string())?;
+        let mut clients = Vec::new();
+        let mut children = Vec::new();
+        let mut taskers_to_drop = Vec::new();
+        let mut controllers_to_drop = Vec::new();
+        let mut resources_to_drop = Vec::new();
+
+        for instance in instances.values_mut() {
+            clients.append(&mut instance.agent_clients);
+            children.append(&mut instance.agent_children);
+            taskers_to_drop.extend(instance.tasker.take());
+            controllers_to_drop.extend(instance.controller.take());
+            resources_to_drop.extend(instance.resource.take());
+            instance.controller_config = None;
+            instance.task_ids.clear();
+            instance.stop_in_progress = false;
+            instance.stop_started_at = None;
+        }
+
+        (
+            clients,
+            children,
+            taskers_to_drop,
+            controllers_to_drop,
+            resources_to_drop,
+        )
+    };
+
+    if let Ok(mut pool) = maa_state.controller_pool.lock() {
+        pool.clear();
+    }
+
+    if let Err(error) = stop_agent_handles(clients, children, Duration::from_secs(5)) {
+        errors.push(error);
+    }
+
+    drop(taskers_to_drop);
+    drop(controllers_to_drop);
+    drop(resources_to_drop);
+    drop(taskers);
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("; "))
+    }
 }

@@ -751,8 +751,14 @@ async fn handle_create_instance(
     State(state): State<WebState>,
     axum::extract::Path(instance_id): axum::extract::Path<String>,
 ) -> impl IntoResponse {
-    ensure_instance_exists(&state.maa_state, &instance_id);
-    Json(serde_json::json!({ "ok": true })).into_response()
+    match ensure_instance_exists(&state.maa_state, &instance_id) {
+        Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(e) => (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response(),
+    }
 }
 
 /// DELETE /api/maa/instances/:id
@@ -772,12 +778,13 @@ async fn handle_destroy_instance(
 }
 
 /// 确保指定实例存在，不存在则自动创建
-fn ensure_instance_exists(maa_state: &Arc<MaaState>, instance_id: &str) {
-    if let Ok(mut instances) = maa_state.instances.lock() {
-        instances
-            .entry(instance_id.to_string())
-            .or_insert_with(crate::commands::types::InstanceRuntime::default);
-    }
+fn ensure_instance_exists(maa_state: &Arc<MaaState>, instance_id: &str) -> Result<(), String> {
+    let _runtime_permit = maa_state.update_coordinator.try_runtime_operation()?;
+    let mut instances = maa_state.instances.lock().map_err(|e| e.to_string())?;
+    instances
+        .entry(instance_id.to_string())
+        .or_insert_with(crate::commands::types::InstanceRuntime::default);
+    Ok(())
 }
 
 /// POST /api/maa/instances/:id/connect
@@ -787,7 +794,13 @@ async fn handle_connect_controller(
     axum::extract::Path(instance_id): axum::extract::Path<String>,
     Json(config): Json<ControllerConfig>,
 ) -> impl IntoResponse {
-    ensure_instance_exists(&state.maa_state, &instance_id);
+    if let Err(e) = ensure_instance_exists(&state.maa_state, &instance_id) {
+        return (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
 
     let app_handle = state.app_handle.clone();
     let on_event = Arc::new(move |msg: &str, detail: &str| {
@@ -815,7 +828,13 @@ async fn handle_load_resource(
     axum::extract::Path(instance_id): axum::extract::Path<String>,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    ensure_instance_exists(&state.maa_state, &instance_id);
+    if let Err(e) = ensure_instance_exists(&state.maa_state, &instance_id) {
+        return (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
 
     let paths: Vec<String> = match body.get("paths").and_then(|v| v.as_array()) {
         Some(arr) => arr
@@ -918,7 +937,13 @@ async fn handle_start_tasks(
     axum::extract::Path(instance_id): axum::extract::Path<String>,
     Json(body): Json<StartTasksRequest>,
 ) -> impl IntoResponse {
-    ensure_instance_exists(&state.maa_state, &instance_id);
+    if let Err(e) = ensure_instance_exists(&state.maa_state, &instance_id) {
+        return (
+            StatusCode::CONFLICT,
+            Json(serde_json::json!({ "error": e })),
+        )
+            .into_response();
+    }
 
     let cwd = match body.cwd {
         Some(cwd) => cwd,
@@ -1011,7 +1036,7 @@ async fn handle_stop_agent(
     State(state): State<WebState>,
     axum::extract::Path(instance_id): axum::extract::Path<String>,
 ) -> impl IntoResponse {
-    match stop_agent_impl(&state.maa_state, &instance_id) {
+    match stop_agent_impl(&state.maa_state, &instance_id).await {
         Ok(()) => Json(serde_json::json!({ "ok": true })).into_response(),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,

@@ -270,8 +270,7 @@ pub fn run() {
             // 更新安装命令
             commands::update::extract_zip,
             commands::update::check_changes_json,
-            commands::update::apply_incremental_update,
-            commands::update::apply_full_update,
+            commands::update::install_prepared_update,
             commands::update::cleanup_extract_dir,
             commands::update::fallback_update,
             commands::update::move_file_to_old,

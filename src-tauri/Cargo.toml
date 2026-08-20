@@ -81,3 +81,6 @@ winsafe = { version = "0.0.28", features = [
     "gdi",
     "user"
 ] }
+
+[dev-dependencies]
+tempfile = "3"

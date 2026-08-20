@@ -970,10 +970,9 @@ export function isExecutableInstaller(filePath: string): boolean {
  * 1. 如果是 exe/dmg 文件，直接打开（调用系统默认程序）
  * 2. 否则解压更新包（支持 zip/tar.gz/tgz）
  * 3. 检查是否为增量包（存在 changes.json）
- * 4. 增量包：删除 deleted 文件，复制覆盖
- * 5. 全量包：删除同名文件夹，复制覆盖
- * 6. 清理临时文件
- * 7. 如果失败，尝试兜底：创建 v版本号 文件夹
+ * 4. 后端停止 Maa 运行时，并以单个事务完成备份、应用和失败回滚
+ * 5. 清理临时文件
+ * 6. 如果事务失败，尝试兜底：创建 v版本号 文件夹
  */
 export async function installUpdate(options: InstallUpdateOptions): Promise<boolean> {
   if (isInstalling) {
@@ -1033,38 +1032,35 @@ export async function installUpdate(options: InstallUpdateOptions): Promise<bool
       });
 
       if (changesJson) {
-        // 增量更新
         log.info(
           `增量更新: deleted=${changesJson.deleted.length}, added=${
             changesJson.added.length
           }, modified=${changesJson.modified.length}`,
         );
         onProgress?.('applying', 'incremental');
-
-        await invoke('apply_incremental_update', {
-          extractDir,
-          targetDir,
-          deletedFiles: changesJson.deleted,
-        });
       } else {
-        // 全量更新
         log.info('全量更新');
         onProgress?.('applying', 'full');
-
-        await invoke('apply_full_update', {
-          extractDir,
-          targetDir,
-        });
       }
+
+      // 后端在单个事务中完成运行时停机、备份、应用和失败回滚。
+      await invoke('install_prepared_update', {
+        extractDir,
+        targetDir,
+      });
 
       // 3. 清理临时文件
       onProgress?.('cleanup');
       log.info('清理临时文件...');
 
-      await invoke('cleanup_extract_dir', { extractDir });
+      await invoke('cleanup_extract_dir', { extractDir }).catch((e) => {
+        log.warn('清理更新暂存目录失败（忽略）:', e);
+      });
 
       // 将下载的 zip 文件移动到 old 文件夹
-      await moveToOldFolder(zipPath);
+      await moveToOldFolder(zipPath).catch((e) => {
+        log.warn('归档更新包失败（忽略）:', e);
+      });
 
       // 清理更新残留产物：target_dir/changes.json 和 cache/*.downloading
       const cacheDir = await getCacheDir();

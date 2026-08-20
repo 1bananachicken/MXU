@@ -5,7 +5,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::path::PathBuf;
 use std::process::Child;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
@@ -14,6 +14,8 @@ use maa_framework::agent_client::AgentClient;
 use maa_framework::controller::Controller;
 use maa_framework::resource::Resource;
 use maa_framework::tasker::Tasker;
+
+use super::update_runtime::UpdateCoordinator;
 
 // ============================================================================
 // 数据类型定义
@@ -309,6 +311,8 @@ impl LogBuffer {
 /// MaaFramework 运行时状态
 #[derive(Default)]
 pub struct MaaState {
+    /// 更新临界区门禁：阻止更新过程中创建新的 Maa 运行时。
+    pub update_coordinator: Arc<UpdateCoordinator>,
     pub lib_dir: Mutex<Option<PathBuf>>,
     pub resource_dir: Mutex<Option<PathBuf>>,
     pub instances: Mutex<HashMap<String, InstanceRuntime>>,

@@ -298,6 +298,7 @@ fn update_instance_controller(
 #[tauri::command]
 pub fn maa_init(state: State<Arc<MaaState>>, lib_dir: Option<String>) -> Result<String, String> {
     info!("maa_init called, lib_dir: {:?}", lib_dir);
+    let _runtime_permit = state.update_coordinator.try_runtime_operation()?;
 
     let lib_path = match lib_dir {
         Some(dir) if !dir.is_empty() => std::path::PathBuf::from(&dir),
@@ -619,6 +620,7 @@ pub async fn maa_find_wlroots_sockets(
 #[tauri::command]
 pub fn maa_create_instance(state: State<Arc<MaaState>>, instance_id: String) -> Result<(), String> {
     info!("maa_create_instance called, instance_id: {}", instance_id);
+    let _runtime_permit = state.update_coordinator.try_runtime_operation()?;
 
     let mut instances = state.instances.lock().map_err(|e| e.to_string())?;
 
@@ -703,6 +705,7 @@ pub async fn connect_controller_impl(
     config: ControllerConfig,
     on_event: Arc<dyn Fn(&str, &str) + Send + Sync + 'static>,
 ) -> Result<i64, String> {
+    let _runtime_permit = state_arc.update_coordinator.runtime_operation().await?;
     tokio::task::spawn_blocking(move || {
         // ControllerPool: 检查是否有可复用的已连接控制器
         let pooled = {
@@ -999,6 +1002,7 @@ pub fn load_resource_impl(
     on_event: Arc<dyn Fn(&str, &str) + Send + Sync + 'static>,
     app: Option<&tauri::AppHandle>,
 ) -> Result<Vec<i64>, String> {
+    let _runtime_permit = state.update_coordinator.try_runtime_operation()?;
     info!(
         "load_resource_impl called, instance: {}, paths: {:?}",
         instance_id, paths
@@ -1139,6 +1143,7 @@ pub fn run_task_impl(
     pipeline_override: &str,
     selected_task_id: Option<&str>,
 ) -> Result<i64, String> {
+    let _runtime_permit = state.update_coordinator.try_runtime_operation()?;
     let mut instances = state.instances.lock().map_err(|e| e.to_string())?;
     let instance = instances.get_mut(instance_id).ok_or("Instance not found")?;
 
