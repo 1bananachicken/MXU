@@ -49,10 +49,7 @@ import { isPretaskName } from '@/types/pretasks';
 import { loggers } from '@/utils/logger';
 import { toast } from 'sonner';
 import clsx from 'clsx';
-import {
-  getAllMxuSpecialTasks,
-  getAllMxuSpecialTasksOptions,
-} from '@/types/specialTasks.ts';
+import { getAllMxuSpecialTasks, getAllMxuSpecialTasksOptions } from '@/types/specialTasks.ts';
 
 /** 单个预设卡片 */
 function PresetCard({ preset, onApply }: { preset: PresetItem; onApply: () => void }) {

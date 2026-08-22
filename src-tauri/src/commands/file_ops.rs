@@ -620,7 +620,10 @@ fn export_logs_blocking(
 
     let config_dir = data_dir.join("config");
     regular_entries.extend(collect_files_recursively(&config_dir, "config")?);
-    regular_entries.extend(collect_debug_subdir_files(&debug_dir, &["log", "json", "dmp"])?);
+    regular_entries.extend(collect_debug_subdir_files(
+        &debug_dir,
+        &["log", "json", "dmp"],
+    )?);
 
     // ─── 2. 收集图片（on_error + vision，按 mtime 新→旧） ───
     let on_error_images = collect_debug_images(&debug_dir.join("on_error"), "on_error");
