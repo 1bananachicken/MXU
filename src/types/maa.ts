@@ -1,5 +1,7 @@
 // MaaFramework 类型定义
 
+import { loggers } from '@/utils/logger';
+
 /** ADB 设备信息 */
 export interface AdbDevice {
   name: string;
@@ -159,6 +161,7 @@ export const Win32InputMethod = {
   PostMessageWithCursorPos: 1n << 6n,
   SendMessageWithWindowPos: 1n << 7n,
   PostMessageWithWindowPos: 1n << 8n,
+  Interception: 1n << 9n,
 } as const;
 
 /** Win32 截图方法名称映射 */
@@ -184,6 +187,7 @@ export const Win32InputMethodNames: Record<string, bigint> = {
   PostMessageWithCursorPos: Win32InputMethod.PostMessageWithCursorPos,
   SendMessageWithWindowPos: Win32InputMethod.SendMessageWithWindowPos,
   PostMessageWithWindowPos: Win32InputMethod.PostMessageWithWindowPos,
+  Interception: Win32InputMethod.Interception,
 };
 
 /** macOS 截图方法 */
@@ -233,7 +237,11 @@ export function parseWin32InputMethod(name: string): number {
   if (method !== undefined) {
     return Number(method);
   }
-  // 默认使用 Seize
+  // 默认使用 Seize；遇到非合规值时记录警告
+  loggers.config.warn(
+    '遇到非合规的 Win32 输入方法名称，已回退到默认值 Seize。',
+    { name, fallback: 'Seize' },
+  );
   return Number(Win32InputMethod.Seize);
 }
 
