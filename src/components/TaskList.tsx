@@ -427,10 +427,17 @@ export function TaskList() {
               icon: Copy,
               onClick: () => {
                 if (projectName) {
-                  exportWithToast(instance, projectName, exportHint, exportFooter, {
-                    success: t('preset.exportSuccess'),
-                    failed: t('preset.exportFailed'),
-                  }, exportOptions);
+                  exportWithToast(
+                    instance,
+                    projectName,
+                    exportHint,
+                    exportFooter,
+                    {
+                      success: t('preset.exportSuccess'),
+                      failed: t('preset.exportFailed'),
+                    },
+                    exportOptions,
+                  );
                 }
               },
             },
@@ -440,10 +447,17 @@ export function TaskList() {
               icon: FileText,
               onClick: () => {
                 if (projectName) {
-                  exportFileWithToast(instance, projectName, exportHint, exportFooter, {
-                    success: t('preset.exportFileSuccess'),
-                    failed: t('preset.exportFileFailed'),
-                  }, exportOptions);
+                  exportFileWithToast(
+                    instance,
+                    projectName,
+                    exportHint,
+                    exportFooter,
+                    {
+                      success: t('preset.exportFileSuccess'),
+                      failed: t('preset.exportFileFailed'),
+                    },
+                    exportOptions,
+                  );
                 }
               },
             },

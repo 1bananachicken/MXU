@@ -11,7 +11,12 @@ import {
   resolveThemeMode,
   unregisterCustomAccent,
 } from '@/themes';
-import type { LegacyActionConfig, MxuConfig, RecentlyClosedInstance, SavedTask } from '@/types/config';
+import type {
+  LegacyActionConfig,
+  MxuConfig,
+  RecentlyClosedInstance,
+  SavedTask,
+} from '@/types/config';
 import {
   clampAddTaskPanelHeight,
   DEFAULT_MAX_LOGS_PER_INSTANCE,
@@ -1475,11 +1480,7 @@ export const useAppStore = create<AppState>()(
               ? t
               : {
                   ...t,
-                  optionValues: restoreOptionValuesFromConfig(
-                    t.optionValues,
-                    pi,
-                    pi?.name,
-                  ),
+                  optionValues: restoreOptionValuesFromConfig(t.optionValues, pi, pi?.name),
                 },
           ),
         })),

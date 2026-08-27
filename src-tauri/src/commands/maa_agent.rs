@@ -723,7 +723,9 @@ pub async fn start_tasks_impl(
             reset_state
         );
         let mut instances = maa_state.instances.lock().map_err(|e| e.to_string())?;
-        let instance = instances.get_mut(&instance_id).ok_or("Instance not found")?;
+        let instance = instances
+            .get_mut(&instance_id)
+            .ok_or("Instance not found")?;
         if reset_state {
             // 首批：重置任务运行状态
             instance.task_ids.clear();

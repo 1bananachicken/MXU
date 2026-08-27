@@ -1,4 +1,10 @@
-import type { InputItem, OptionDefinition, OptionValue, SelectedTask, TaskItem } from '@/types/interface';
+import type {
+  InputItem,
+  OptionDefinition,
+  OptionValue,
+  SelectedTask,
+  TaskItem,
+} from '@/types/interface';
 import { buildInputSecretKey, decryptSecret, encryptSecret } from '@/utils/secretCrypto';
 
 const REDACTED = '***';
