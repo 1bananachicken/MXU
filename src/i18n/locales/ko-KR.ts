@@ -116,15 +116,14 @@ export default {
     confirmBeforeDeleteHint: '삭제/목록 비우기 등 위험한 작업 전에 확인 대화 상자를 표시합니다',
     helpImproveSoftware: '소프트웨어 개선에 참여',
     helpImproveSoftwareHint:
-      '충돌 및 작업 통계를 익명으로 전송하여 일반적인 문제를 찾는 데 도움을 줍니다.',
+      '충돌, 작업 통계, 실패한 작업의 관련 로그와 오류 스크린샷을 익명으로 전송하여 일반적인 문제를 찾는 데 도움을 줍니다.',
     helpImproveSoftwareDisabledHint: '디버그 / 개발 버전에서는 익명 데이터 전송이 비활성화됩니다',
     maxLogsPerInstance: '인스턴스당 로그 최대 개수',
     maxLogsPerInstanceHint: '한도를 초과하면 가장 오래된 로그가 자동으로 삭제됩니다(권장 500~2000)',
     resetWindowLayout: '창 레이아웃 초기화',
     resetWindowLayoutHint: '창 크기를 기본값으로 복원하고 화면 중앙에 배치합니다',
     autoClearLogsOnLaunch: '로그 자동 지우기',
-    autoClearLogsOnLaunchHint:
-      '프로젝트를 시작할 때 런타임 로그를 자동으로 지우고 이전 로그 파일을 삭제합니다',
+    autoClearLogsOnLaunchHint: '프로젝트를 시작할 때 런타임 로그와 디버그 파일을 자동으로 지웁니다',
   },
 
   // 특수 작업
@@ -197,6 +196,8 @@ export default {
       restart: '재시작',
       screenoff: '화면 끄기',
       sleep: '절전 모드',
+      mute: '음소거',
+      unmute: '음소거 해제',
     },
   },
 
@@ -347,6 +348,8 @@ export default {
     incompatibleResource: '현재 리소스 팩에서 지원되지 않음',
     hotkeyPlaceholder: '클릭하여 단축키 입력',
     hotkeyCapturing: '키를 누르세요...',
+    expandOptions: '하위 옵션 펼치기',
+    collapseOptions: '하위 옵션 접기',
   },
 
   // 프리셋
@@ -378,6 +381,10 @@ export default {
     adb: 'Android 기기',
     win32: 'Windows 창',
     wlroots: 'WlRoots (Linux)',
+    linux: 'Linux',
+    portal: 'Portal',
+    uinputWidth: '너비 (px)',
+    uinputHeight: '높이 (px)',
     playcover: 'PlayCover (macOS)',
     macos: 'macOS 창',
     macosPermissionsRequired:
@@ -388,6 +395,7 @@ export default {
     macosSystemVersionRequired: 'macOS 네이티브 창 컨트롤러에는 macOS 14.0 이상이 필요합니다.',
     macosSystemVersionDetectionFailed:
       '현재 macOS 버전을 확인할 수 없습니다. 자세한 내용은 로그를 확인하세요.',
+    linuxVersionRequired: 'Linux 컨트롤러에는 MaaFramework v5.13.0-beta.3 이상이 필요합니다.',
     gamepad: '게임패드',
     connecting: '연결 중...',
     connected: '연결됨',
@@ -583,6 +591,13 @@ export default {
     webServerAddress: 'Web 서버 주소',
   },
 
+  // 설정 자동 복구 알림
+  config: {
+    recoveredFromBackup: '설정 파일이 손상되어 {{time}} 백업에서 자동으로 복원했습니다',
+    recoveryFailed:
+      '설정 파일이 손상되었고 사용할 수 있는 백업이 없어 기본 설정으로 초기화했습니다',
+  },
+
   // 환영 대화상자
   welcome: {
     dismiss: '확인했습니다',
@@ -664,6 +679,7 @@ export default {
       '는 독립적인 서드파티 고속 다운로드 서비스이며 유료 구독이 필요합니다. 이것은 "{{projectName}}"의 요금이 아닙니다. 운영비는 구독 수익으로 충당되며 일부는 개발자에게 환원됩니다. CDK를 구독하여 고속 다운로드를 즐기세요. CDK가 없으면 GitHub에서 다운로드됩니다. 실패하면 네트워크 프록시를 설정하세요.',
     getCdk: 'CDK가 없으신가요? 지금 구독하세요',
     cdkHint: 'CDK가 올바른지 또는 만료되지 않았는지 확인하세요',
+    slowDownloadHint: '다른 채널',
     checkUpdate: '업데이트 확인',
     checking: '확인 중...',
     upToDate: '최신 버전입니다 ({{version}})',
