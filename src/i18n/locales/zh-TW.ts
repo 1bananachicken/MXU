@@ -114,14 +114,15 @@ export default {
     confirmBeforeDelete: '刪除操作需要二次確認',
     confirmBeforeDeleteHint: '刪除任務、清空列表等危險操作會先彈出確認對話框',
     helpImproveSoftware: '協助改進軟體',
-    helpImproveSoftwareHint: '匿名傳送崩潰與任務統計，協助發現常見問題',
+    helpImproveSoftwareHint:
+      '匿名傳送崩潰、任務統計及失敗任務的相關日誌與錯誤截圖，協助發現常見問題',
     helpImproveSoftwareDisabledHint: '目前為除錯 / 開發版本，已停用匿名資料回報',
     maxLogsPerInstance: '每個實例保留的日誌上限',
     maxLogsPerInstanceHint: '超出上限會自動丟棄最舊的日誌（建議 500～2000）',
     resetWindowLayout: '重設視窗佈局',
     resetWindowLayoutHint: '將視窗大小恢復為預設值，並置中顯示',
     autoClearLogsOnLaunch: '自動清理運行日誌',
-    autoClearLogsOnLaunchHint: '每次啟動項目時，自動清理運行日誌並刪除舊的日誌檔案',
+    autoClearLogsOnLaunchHint: '每次啟動項目時，自動清理運行日誌與除錯檔案',
   },
 
   // 特殊任務
@@ -192,6 +193,8 @@ export default {
       restart: '重新啟動',
       screenoff: '關閉螢幕',
       sleep: '睡眠',
+      mute: '靜音',
+      unmute: '取消靜音',
     },
   },
 
@@ -340,6 +343,8 @@ export default {
     incompatibleResource: '不支援目前資源包',
     hotkeyPlaceholder: '點擊錄入快捷鍵',
     hotkeyCapturing: '按下快捷鍵...',
+    expandOptions: '展開子選項',
+    collapseOptions: '收起子選項',
   },
 
   // 預設設定
@@ -370,6 +375,10 @@ export default {
     adb: 'Android 裝置',
     win32: 'Windows 視窗',
     wlroots: 'WlRoots (Linux)',
+    linux: 'Linux',
+    portal: 'Portal',
+    uinputWidth: '寬 (px)',
+    uinputHeight: '高 (px)',
     playcover: 'PlayCover (macOS)',
     macos: 'macOS 視窗',
     macosPermissionsRequired:
@@ -378,6 +387,7 @@ export default {
     macosVersionRequired: 'macOS 原生視窗控制器需要 MaaFramework v5.10.0-beta.1 或更新版本。',
     macosSystemVersionRequired: 'macOS 原生視窗控制器需要 macOS 14.0 或更新版本。',
     macosSystemVersionDetectionFailed: '無法識別目前的 macOS 系統版本，請查看日誌以瞭解詳情。',
+    linuxVersionRequired: 'Linux 控制器需要 MaaFramework v5.13.0-beta.3 或更新版本。',
     gamepad: '遊戲控制器',
     connecting: '連接中...',
     connected: '已連接',
@@ -567,6 +577,12 @@ export default {
     webServerAddress: 'Web 服務地址',
   },
 
+  // 設定自我修復提示
+  config: {
+    recoveredFromBackup: '設定檔已損壞，已自動還原到 {{time}} 的備份',
+    recoveryFailed: '設定檔已損壞且沒有可用的備份，已重設為預設設定',
+  },
+
   // 欢迎彈窗
   welcome: {
     dismiss: '我知道了',
@@ -647,6 +663,7 @@ export default {
       ' 是獨立的第三方加速下載服務，需要付費使用，並非「{{projectName}}」收費。其營運成本由訂閱收入支撐，部分收益將回饋專案開發者。歡迎訂閱 CDK 享受高速下載，同時支援專案持續開發。未填寫 CDK 時將自動透過 GitHub 下載，若失敗請嘗試設定網路代理。',
     getCdk: '沒有CDK？立即訂閱',
     cdkHint: '請檢查您的 CDK 是否正確或已過期',
+    slowDownloadHint: '其他管道',
     checkUpdate: '檢查更新',
     checking: '正在檢查...',
     upToDate: '目前已是最新版本 ({{version}})',

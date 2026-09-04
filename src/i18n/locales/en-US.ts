@@ -118,7 +118,7 @@ export default {
       'Show a confirmation dialog before delete/clear list and other dangerous actions.',
     helpImproveSoftware: 'Help Improve the Software',
     helpImproveSoftwareHint:
-      'Anonymously send crash reports and task statistics to help find common issues.',
+      'Anonymously send crash reports, task statistics, and relevant logs and error screenshots from failed tasks to help find common issues.',
     helpImproveSoftwareDisabledHint:
       'Anonymous data reporting is disabled in debug / development builds.',
     maxLogsPerInstance: 'Max logs per instance',
@@ -128,7 +128,7 @@ export default {
     resetWindowLayoutHint: 'Restore window size to default and center the window',
     autoClearLogsOnLaunch: 'Auto-clear Runtime Logs',
     autoClearLogsOnLaunchHint:
-      'Automatically clear runtime logs and delete old log files every time the project is launched',
+      'Automatically clear runtime logs and debug files every time the project is launched',
   },
 
   // Special tasks
@@ -201,6 +201,8 @@ export default {
       restart: 'Restart',
       screenoff: 'Turn Off Screen',
       sleep: 'Sleep',
+      mute: 'Mute',
+      unmute: 'Unmute',
     },
   },
 
@@ -356,6 +358,8 @@ export default {
     incompatibleResource: 'Not supported by current resource',
     hotkeyPlaceholder: 'Click to record shortcut',
     hotkeyCapturing: 'Press keys...',
+    expandOptions: 'Expand sub-options',
+    collapseOptions: 'Collapse sub-options',
   },
 
   // Preset
@@ -387,6 +391,10 @@ export default {
     adb: 'Android Device',
     win32: 'Windows Window',
     wlroots: 'WlRoots (Linux)',
+    linux: 'Linux',
+    portal: 'Portal',
+    uinputWidth: 'Width (px)',
+    uinputHeight: 'Height (px)',
     playcover: 'PlayCover (macOS)',
     macos: 'macOS Window',
     macosPermissionsRequired:
@@ -397,6 +405,7 @@ export default {
     macosSystemVersionRequired: 'The native macOS window controller requires macOS 14.0 or later.',
     macosSystemVersionDetectionFailed:
       'The current macOS version could not be detected. Check the logs for details.',
+    linuxVersionRequired: 'The Linux controller requires MaaFramework v5.13.0-beta.3 or later.',
     gamepad: 'Gamepad',
     connecting: 'Connecting...',
     connected: 'Connected',
@@ -594,6 +603,14 @@ export default {
     webServerAddress: 'Web Server Address',
   },
 
+  // Config self-heal notices
+  config: {
+    recoveredFromBackup:
+      'The config file was corrupted and has been restored from the {{time}} backup',
+    recoveryFailed:
+      'The config file was corrupted and no usable backup was found, so it has been reset to defaults',
+  },
+
   // Welcome dialog
   welcome: {
     dismiss: 'Got it',
@@ -675,6 +692,7 @@ export default {
       ' is an independent third-party accelerated download service that requires a paid subscription, not a fee charged by "{{projectName}}". Its operating costs are covered by subscription revenue, with a portion supporting project developers. Subscribe for high-speed downloads while supporting ongoing development. Without a CDK, downloads will fall back to GitHub. If that fails, please configure a network proxy.',
     getCdk: 'No CDKey? Subscribe Now',
     cdkHint: 'Please check if your CDK is correct or has expired',
+    slowDownloadHint: 'Other channels',
     checkUpdate: 'Check for Updates',
     checking: 'Checking...',
     upToDate: 'You are up to date ({{version}})',
