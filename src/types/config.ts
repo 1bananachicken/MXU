@@ -23,12 +23,18 @@ export interface SavedTask {
   /** 各控制器独立的勾选状态（旧配置中不存在时按 enabled 初始化） */
   enabledByController?: Record<string, boolean>;
   optionValues: Record<string, OptionValue>;
+  /** 任务卡片是否展开；缺省 = 收起，向后兼容 */
+  expanded?: boolean;
+  /** 各选项的子选项折叠状态（optionKey → 是否折叠）；缺省 = 展开，向后兼容 */
+  collapsedOptions?: Record<string, boolean>;
 }
 
 // 保存的设备信息
 export interface SavedDeviceInfo {
   // ADB 设备：保存设备名称
   adbDeviceName?: string;
+  // ADB 设备：保存设备地址（新配置优先，旧配置仍可按名称匹配）
+  adbDeviceAddress?: string;
   // Win32/MacOS/Gamepad：保存窗口名称
   windowName?: string;
   // WlRoots：保存 Wayland socket 路径
@@ -243,3 +249,23 @@ export const defaultConfig: MxuConfig = {
     helpImproveSoftware: true,
   },
 };
+
+/**
+ * 判断任意值是否是结构上可用的 MxuConfig。
+ *
+ * `parseJsonc` 解析失败时不抛异常而是返回 undefined，若不校验就会把 undefined
+ * 当成配置一路传下去，直到访问 `config.instances` 时才炸。所有读盘路径都必须先过这里。
+ */
+export function isValidMxuConfig(value: unknown): value is MxuConfig {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false;
+  }
+  const candidate = value as Partial<MxuConfig>;
+  return (
+    typeof candidate.version === 'string' &&
+    Array.isArray(candidate.instances) &&
+    typeof candidate.settings === 'object' &&
+    candidate.settings !== null &&
+    !Array.isArray(candidate.settings)
+  );
+}
