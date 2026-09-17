@@ -18,7 +18,7 @@ import {
   savePendingUpdateInfo,
 } from '@/services/updateService';
 import { proxySettingsForUpdateDownload } from '@/services/proxyService';
-import { DownloadProgressBar } from './UpdateInfoCard';
+import { DownloadProgressBar, useOpenUpdateSettings } from './UpdateInfoCard';
 import clsx from 'clsx';
 import { loggers } from '@/utils/logger';
 
@@ -124,6 +124,13 @@ export function UpdatePanel({ onClose, anchorRef }: UpdatePanelProps) {
     useAppStore.getState().setInstallStatus('installing');
   }, [setShowInstallConfirmModal, onClose]);
 
+  // 跳转到设置页的更新分区去配置 CDK
+  const openUpdateSettings = useOpenUpdateSettings();
+  const handleOpenUpdateSettings = useCallback(() => {
+    openUpdateSettings();
+    onClose(); // 关闭气泡
+  }, [openUpdateSettings, onClose]);
+
   // 计算面板位置
   useEffect(() => {
     if (anchorRef.current) {
@@ -208,7 +215,7 @@ export function UpdatePanel({ onClose, anchorRef }: UpdatePanelProps) {
     return (
       <div
         ref={panelRef}
-        className="fixed z-50 w-80 bg-bg-secondary rounded-xl shadow-lg border border-border overflow-hidden animate-in"
+        className="mxu-overlay-surface fixed z-50 w-80 bg-bg-secondary rounded-xl shadow-lg border border-border overflow-hidden animate-in"
         style={{
           top: position.top,
           right: position.right,
@@ -257,7 +264,7 @@ export function UpdatePanel({ onClose, anchorRef }: UpdatePanelProps) {
   return (
     <div
       ref={panelRef}
-      className="fixed z-50 w-80 bg-bg-secondary rounded-xl shadow-lg border border-border overflow-hidden animate-in"
+      className="mxu-overlay-surface fixed z-50 w-80 bg-bg-secondary rounded-xl shadow-lg border border-border overflow-hidden animate-in"
       style={{
         top: position.top,
         right: position.right,
@@ -351,6 +358,7 @@ export function UpdatePanel({ onClose, anchorRef }: UpdatePanelProps) {
                 resetDownloadState();
                 startDownload();
               }}
+              onSlowDownloadHintClick={handleOpenUpdateSettings}
             />
           )}
 
