@@ -11,7 +11,7 @@ import { loggers } from '@/utils/logger';
 import i18n, { getInterfaceLangKey } from '@/i18n';
 import { getMxuSpecialTask } from '@/types/specialTasks';
 import { isTauri } from '@/utils/paths';
-import { isDesktopWindowControllerType } from '@/utils/controller';
+import { isDesktopWindowControllerType, getLinuxDeviceName } from '@/utils/controller';
 import * as wsService from '@/services/wsService';
 import {
   resolveI18nText,
@@ -19,6 +19,7 @@ import {
   resolveContent,
   markdownToHtmlWithLocalImages,
 } from '@/services/contentResolver';
+import { hasRichTextFeatures } from '@/utils/richText';
 import type { FocusTemplate, FocusDisplayChannel } from '@/types/interface';
 
 const log = loggers.app;
@@ -45,6 +46,24 @@ async function dispatchFocusNotification(message: string) {
   } catch (error) {
     log.warn('Notification not available', error);
   }
+}
+
+/**
+ * v2.3.0: 归一化 focus 模板（字符串简写 / 对象完整写法）。
+ * 无展示内容（v2.9.1 起 content 可缺省，如只配 trace）时返回 undefined。
+ */
+function parseFocusEntry(
+  entry: FocusTemplate,
+): { content: string; displayChannels: FocusDisplayChannel[] } | undefined {
+  if (typeof entry === 'string') {
+    return { content: entry, displayChannels: ['log'] };
+  }
+  if (!entry.content) return undefined;
+  const display = entry.display;
+  return {
+    content: entry.content,
+    displayChannels: display ? (Array.isArray(display) ? display : [display]) : ['log'],
+  };
 }
 
 // Focus 消息的占位符替换（不包含 {image}，由专门函数处理）
@@ -113,13 +132,8 @@ async function resolveFocusContent(
 
   // 5. 如果是直接文本，检查是否包含富文本特征
   if (contentType === 'text') {
-    // 检测是否包含 Markdown 语法、HTML 标签或 URL
-    const hasRichContent =
-      /[*_`#\[\]!]/.test(resolved) || // Markdown 语法
-      resolved.includes('\n') || // 多行内容
-      /<[a-z][\s\S]*?>/i.test(resolved) || // HTML 标签
-      /https?:\/\/\S+/.test(resolved); // URL
-    if (hasRichContent) {
+    // 判定规则集中在 utils/richText，避免各处各写一套正则
+    if (hasRichTextFeatures(resolved)) {
       const html = await markdownToHtmlWithLocalImages(resolved, basePath);
       return { message: resolved, html };
     }
@@ -145,7 +159,10 @@ function isConnectAction(details: MaaCallbackDetails): boolean {
 }
 
 // 从当前实例配置推断控制器类型和名称（用于解决回调时序问题）
-function inferCtrlInfoFromInstance(instanceId: string): {
+function inferCtrlInfoFromInstance(
+  instanceId: string,
+  labels: { portal: string; linux: string },
+): {
   type: 'device' | 'window' | undefined;
   name: string | undefined;
 } {
@@ -168,6 +185,18 @@ function inferCtrlInfoFromInstance(instanceId: string): {
     return { type: 'device', name: savedDevice?.adbDeviceName };
   } else if (controller.type === 'WlRoots') {
     return { type: 'device', name: savedDevice?.wlrSocketPath };
+  } else if (controller.type === 'Linux') {
+    // 按当前配置实际需要的设备派生名称：不依赖 gamescope 的配置（如 Portal+Uinput）
+    // 会忽略残留的 savedDevice.gamescopeDisplayNo，避免显示过期的 `gamescope-<n>`。
+    const name = getLinuxDeviceName(
+      controller,
+      {
+        wlrSocketPath: savedDevice?.wlrSocketPath,
+        gamescopeDisplayNo: savedDevice?.gamescopeDisplayNo,
+      },
+      labels,
+    );
+    return { type: 'device', name };
   } else if (controller.type === 'PlayCover') {
     return { type: 'device', name: savedDevice?.playcoverAddress };
   }
@@ -300,22 +329,13 @@ function handleCallback(
   // 获取 ID 名称映射函数
   const { getCtrlName, getCtrlType, getResName, getResBatchInfo } = useAppStore.getState();
 
-  // 首先检查是否有 focus 字段，有则优先处理 focus 消息
+  // 首先检查是否有 focus 字段，有展示内容则优先处理 focus 消息
+  // （v2.9.1 起对象可以只配 trace 不配 content，这种没有展示内容，落回常规消息处理）
   const focus = details.focus as Record<string, FocusTemplate> | undefined;
-  if (focus && focus[message]) {
-    const focusEntry = focus[message];
-
-    // v2.3.0: 解析 focus 模板（支持字符串简写和对象完整写法）
-    let focusTemplate: string;
-    let displayChannels: FocusDisplayChannel[];
-    if (typeof focusEntry === 'string') {
-      focusTemplate = focusEntry;
-      displayChannels = ['log'];
-    } else {
-      focusTemplate = focusEntry.content;
-      const d = focusEntry.display;
-      displayChannels = d ? (Array.isArray(d) ? d : [d]) : ['log'];
-    }
+  const focusTemplateEntry = focus?.[message];
+  const focusEntry = focusTemplateEntry ? parseFocusEntry(focusTemplateEntry) : undefined;
+  if (focusEntry) {
+    const { content: focusTemplate, displayChannels } = focusEntry;
 
     // 如果包含 {image} 占位符，先快速显示不含图片的版本，避免阻塞
     const hasImagePlaceholder = focusTemplate.includes('{image}');
@@ -373,7 +393,10 @@ function handleCallback(
           details.ctrl_id !== undefined ? getCtrlName(details.ctrl_id) : undefined;
         const registeredType =
           details.ctrl_id !== undefined ? getCtrlType(details.ctrl_id) : undefined;
-        const inferred = inferCtrlInfoFromInstance(instanceId);
+        const inferred = inferCtrlInfoFromInstance(instanceId, {
+          portal: t('controller.portal'),
+          linux: t('controller.linux'),
+        });
         const deviceName = registeredName || inferred.name || '';
         const ctrlType = registeredType || inferred.type;
         const targetText =
@@ -391,7 +414,10 @@ function handleCallback(
           details.ctrl_id !== undefined ? getCtrlName(details.ctrl_id) : undefined;
         const registeredType =
           details.ctrl_id !== undefined ? getCtrlType(details.ctrl_id) : undefined;
-        const inferred = inferCtrlInfoFromInstance(instanceId);
+        const inferred = inferCtrlInfoFromInstance(instanceId, {
+          portal: t('controller.portal'),
+          linux: t('controller.linux'),
+        });
         const deviceName = registeredName || inferred.name || '';
         const ctrlType = registeredType || inferred.type;
         const targetText =
@@ -409,7 +435,10 @@ function handleCallback(
           details.ctrl_id !== undefined ? getCtrlName(details.ctrl_id) : undefined;
         const registeredType =
           details.ctrl_id !== undefined ? getCtrlType(details.ctrl_id) : undefined;
-        const inferred = inferCtrlInfoFromInstance(instanceId);
+        const inferred = inferCtrlInfoFromInstance(instanceId, {
+          portal: t('controller.portal'),
+          linux: t('controller.linux'),
+        });
         const deviceName = registeredName || inferred.name || '';
         const ctrlType = registeredType || inferred.type;
         const targetText =
