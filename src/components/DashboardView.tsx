@@ -384,7 +384,8 @@ function InstanceCard({ instanceId, instanceName, isActive, onSelect }: Instance
             piEnvs,
             {
               name: currentControllerName,
-              type: projectInterface?.controller.find((c) => c.name === currentControllerName)?.type,
+              type: projectInterface?.controller.find((c) => c.name === currentControllerName)
+                ?.type,
             },
             collectPasswordPlaintextsFromRunnableTasks(
               runnableTasks,

@@ -441,7 +441,10 @@ export function Toolbar({ showAddPanel, onToggleAddPanel, className }: ToolbarPr
 
       // 只有依赖 Windows 交互式桌面的实际控制器才受锁屏限制。
       // ADB、Linux 和 PlayCover 均可在锁屏时运行。
-      if (requiresUnlockedWorkstation(controller.type) && (await maaService.isWorkstationLocked())) {
+      if (
+        requiresUnlockedWorkstation(controller.type) &&
+        (await maaService.isWorkstationLocked())
+      ) {
         return failStart(t('taskList.autoConnect.workstationLocked'));
       }
 
