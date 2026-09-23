@@ -29,6 +29,7 @@ import {
   getAllMxuSpecialTasks,
   MXU_LAUNCH_TASK_NAME,
   MXU_KILLPROC_TASK_NAME,
+  MXU_WEBHOOK_TASK_NAME,
 } from '@/types/specialTasks';
 import { getPretaskItems, pretaskName, pretaskItemId, buildPretaskDef } from '@/types/pretasks';
 import { generateId } from '@/stores/helpers';
@@ -36,6 +37,9 @@ import { getProcessNameFromPath } from '@/utils/paths';
 import clsx from 'clsx';
 
 const log = loggers.task;
+
+// 按面板实际宽度排列等宽列；auto-fill 保留空列，使不同任务数的分组仍然对齐。
+const taskGridClassName = 'grid grid-cols-[repeat(auto-fill,minmax(min(100%,14rem),1fr))] gap-2';
 
 /** 任务按钮组件：支持 hover 显示 description tooltip */
 function TaskButton({
@@ -112,7 +116,7 @@ function TaskButton({
       <button
         onClick={() => !disabled && onClick()}
         className={clsx(
-          'relative flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors text-left',
+          'relative flex min-w-0 items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors text-left',
           disabled
             ? 'bg-bg-secondary/50 text-text-muted border border-border/50 cursor-not-allowed opacity-60'
             : 'bg-bg-secondary hover:bg-bg-hover text-text-primary border border-border hover:border-accent',
@@ -132,7 +136,7 @@ function TaskButton({
           </span>
         )}
         <Plus className={clsx('w-4 h-4 shrink-0', disabled ? 'text-text-muted' : 'text-accent')} />
-        <span className="flex-1 truncate">{label}</span>
+        <span className="min-w-0 flex-1 whitespace-normal [overflow-wrap:anywhere]">{label}</span>
         {count > 0 && (
           <span
             className={clsx(
@@ -183,8 +187,11 @@ export function AddTaskPanel() {
     setAddTaskPanelHeight,
   } = useAppStore();
 
-  // 获取所有注册的特殊任务
-  const specialTasks = useMemo(() => getAllMxuSpecialTasks(), []);
+  // Webhook 保留在注册表中以兼容已有任务，但不再提供新增入口。
+  const specialTasks = useMemo(
+    () => getAllMxuSpecialTasks().filter((task) => task.taskName !== MXU_WEBHOOK_TASK_NAME),
+    [],
+  );
 
   const pretasks = useMemo(() => getPretaskItems(projectInterface), [projectInterface]);
 
@@ -488,7 +495,7 @@ export function AddTaskPanel() {
   const renderTaskGrid = (tasks: TaskItem[]) => {
     if (tasks.length === 0) return null;
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2">
+      <div className={taskGridClassName}>
         {tasks.map((task) => {
           const count = taskCounts[task.name] || 0;
           const label = resolveI18nText(task.label, langKey) || task.name;
@@ -519,7 +526,7 @@ export function AddTaskPanel() {
   const renderPretaskGrid = (items: PretaskItem[]) => {
     if (items.length === 0) return null;
     return (
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 2xl:grid-cols-8 gap-2">
+      <div className={taskGridClassName}>
         {items.map((item) => {
           const taskDef = buildPretaskDef(item);
           const taskName = pretaskName(item);

@@ -26,6 +26,7 @@ import clsx from 'clsx';
 import { useAppStore } from '@/stores/appStore';
 import { maaService } from '@/services/maaService';
 import { buildTaskOptionSummary } from '@/services/telemetryService';
+import { collectPasswordPlaintextsFromRunnableTasks } from '@/utils/passwordOptionValues';
 import { ContextMenu, useContextMenu, type MenuItem } from './ContextMenu';
 import { FrameRateSelector, getFrameInterval } from './FrameRateSelector';
 import { resolveI18nText } from '@/services/contentResolver';
@@ -33,14 +34,18 @@ import { loggers, generateTaskPipelineOverride } from '@/utils';
 import type { TaskConfig } from '@/types/maa';
 import { normalizeAgentConfigs } from '@/types/interface';
 import type { PretaskItem } from '@/types/interface';
+import { getLinuxDeviceName } from '@/utils/controller';
 import { getInterfaceLangKey } from '@/i18n';
 import { getMxuSpecialTask } from '@/types/specialTasks';
 import { isTaskCompatible } from '@/stores/helpers';
 import { isPretaskName, getPretaskItem, buildPretaskArgs, buildPretaskDef } from '@/types/pretasks';
-import { splitTasksIntoThreeSegments } from '@/utils/taskSegmentation';
 import { startGlobalCallbackListener } from '@/components/connection/callbackCache';
 import { stopInstanceTasks } from '@/services/taskStopService';
 import { buildPiEnvVars } from '@/utils/piEnv';
+import {
+  formatCheckboxCountViolation,
+  validateInstanceCheckboxCounts,
+} from '@/utils/checkboxOptionValidation';
 
 const log = loggers.ui;
 
@@ -76,9 +81,9 @@ function InstanceCard({ instanceId, instanceName, isActive, onSelect }: Instance
     basePath,
     registerTaskIdName,
     registerEntryTaskName,
-    registerCtrlIdName,
     screenshotFrameRate,
     setShowAddTaskPanel,
+    addLog,
     tcpCompatMode,
     maaVersion,
   } = useAppStore();
@@ -135,6 +140,16 @@ function InstanceCard({ instanceId, instanceName, isActive, onSelect }: Instance
       deviceName = savedDevice.adbDeviceName;
     } else if (savedDevice?.windowName) {
       deviceName = savedDevice.windowName;
+    } else if (currentController?.type === 'Linux' && savedDevice) {
+      // Linux：按当前配置输出实际使用的设备（portal/uinput 等忽略残留的 gamescope-<n>）
+      deviceName = getLinuxDeviceName(
+        currentController,
+        {
+          wlrSocketPath: savedDevice.wlrSocketPath,
+          gamescopeDisplayNo: savedDevice.gamescopeDisplayNo,
+        },
+        { portal: t('controller.portal'), linux: t('controller.linux') },
+      );
     } else if (savedDevice?.wlrSocketPath) {
       deviceName = savedDevice.wlrSocketPath;
     } else if (savedDevice?.playcoverAddress) {
@@ -220,6 +235,40 @@ function InstanceCard({ instanceId, instanceName, isActive, onSelect }: Instance
         setIsStarting(true);
 
         try {
+          const compatibleEnabledTasks = enabledTasks.filter((task) => {
+            const specialTask = getMxuSpecialTask(task.taskName);
+            const pretask = isPretaskName(task.taskName)
+              ? getPretaskItem(projectInterface, task.taskName)
+              : undefined;
+            const taskDef =
+              specialTask?.taskDef ||
+              (pretask ? buildPretaskDef(pretask) : undefined) ||
+              projectInterface?.task.find((item) => item.name === task.taskName);
+            return isTaskCompatible(taskDef, currentControllerName, currentResourceName);
+          });
+          const checkboxViolations = validateInstanceCheckboxCounts(
+            compatibleEnabledTasks,
+            projectInterface,
+            currentControllerName,
+            currentResourceName,
+            useAppStore.getState().globalOptionValues,
+          );
+          if (checkboxViolations.length > 0) {
+            for (const violation of checkboxViolations) {
+              const message = formatCheckboxCountViolation(
+                violation,
+                compatibleEnabledTasks,
+                projectInterface,
+                translations,
+                t,
+              );
+              log.warn(`[${instanceName}] ${message}`);
+              addLog(instanceId, { type: 'error', message });
+            }
+            setIsStarting(false);
+            return;
+          }
+
           // v2.7.0: 连接 Controller 前执行 pretask（如游戏设置）
           // pretask 以伪任务形式存在于任务列表中，此处从已启用任务中筛出。
           const enabledPretasks = enabledTasks
@@ -266,16 +315,7 @@ function InstanceCard({ instanceId, instanceName, isActive, onSelect }: Instance
             })
             .filter((item): item is NonNullable<typeof item> => item !== null);
 
-          const { leading, middle, trailing } = splitTasksIntoThreeSegments(runnableTasks);
-          const primaryBatch = [...leading, ...middle];
-          const hasTrailingBatch = trailing.length > 0;
-
-          log.info(
-            `[${instanceName}] 开始执行任务, 数量: ${runnableTasks.length}, 分段: ${[
-              `primary:${primaryBatch.length}`,
-              `trailing:${trailing.length}`,
-            ].join(', ')}`,
-          );
+          log.info(`[${instanceName}] 开始执行任务, 数量: ${runnableTasks.length}`);
 
           if (runnableTasks.length === 0) {
             log.warn(`[${instanceName}] 没有可执行的任务`);
@@ -283,8 +323,8 @@ function InstanceCard({ instanceId, instanceName, isActive, onSelect }: Instance
             return;
           }
 
-          const buildTaskConfigs = (batchTasks: typeof runnableTasks): TaskConfig[] =>
-            batchTasks.map(({ selectedTask, taskDef, specialTask }) => {
+          const taskConfigs: TaskConfig[] = runnableTasks.map(
+            ({ selectedTask, taskDef, specialTask }) => {
               const taskDisplayName =
                 selectedTask.customName ||
                 (specialTask && taskDef.label
@@ -310,7 +350,8 @@ function InstanceCard({ instanceId, instanceName, isActive, onSelect }: Instance
                   specialTask?.optionDefs ?? projectInterface?.option,
                 ),
               };
-            });
+            },
+          );
 
           // 准备 Agent 配置（支持单个或多个 Agent）
           const agentConfigs = normalizeAgentConfigs(projectInterface?.agent);
@@ -334,58 +375,37 @@ function InstanceCard({ instanceId, instanceName, isActive, onSelect }: Instance
           // 任务可能在 startTasks 返回前就瞬时结束，先启动全局回调缓存再提交。
           await startGlobalCallbackListener();
 
-          const startedTaskIds: number[] = [];
-          const runBatch = async (
-            batchTasks: typeof runnableTasks,
-            resetState: boolean,
-            useDummyController: boolean,
-          ) => {
-            if (batchTasks.length === 0) return [] as number[];
-            if (useDummyController) {
-              log.info(`[${instanceName}] 收尾特殊任务切换为 Dummy Controller`);
-              const dummyCtrlId = await maaService.connectController(instanceId, {
-                type: 'Dummy',
-                display_short_side: undefined,
-              });
-              registerCtrlIdName(instanceId, dummyCtrlId, 'MXU Dummy Controller', 'device');
-              setInstanceConnectionStatus(instanceId, 'Connected');
-            }
+          const startedTaskIds = await maaService.startTasks(
+            instanceId,
+            taskConfigs,
+            agentConfigs,
+            basePath,
+            tcpCompatMode,
+            piEnvs,
+            {
+              name: currentControllerName,
+              type: projectInterface?.controller.find((c) => c.name === currentControllerName)
+                ?.type,
+            },
+            collectPasswordPlaintextsFromRunnableTasks(
+              runnableTasks,
+              useAppStore.getState().globalOptionValues,
+              projectInterface?.option ?? {},
+            ),
+          );
 
-            const batchTaskIds = await maaService.startTasks(
-              instanceId,
-              buildTaskConfigs(batchTasks),
-              agentConfigs,
-              basePath,
-              tcpCompatMode,
-              piEnvs,
-              resetState,
-              {
-                name: currentControllerName,
-                type: projectInterface?.controller.find((c) => c.name === currentControllerName)
-                  ?.type,
-              },
-            );
-
-            batchTaskIds.forEach((maaTaskId, index) => {
-              const runnable = batchTasks[index];
-              if (!runnable) return;
-              const { selectedTask, taskDef, specialTask } = runnable;
-              const taskDisplayName =
-                selectedTask.customName ||
-                (specialTask && taskDef.label
-                  ? t(taskDef.label)
-                  : resolveI18nText(taskDef.label, translations)) ||
-                selectedTask.taskName;
-              registerTaskIdName(maaTaskId, taskDisplayName);
-            });
-
-            return batchTaskIds;
-          };
-
-          startedTaskIds.push(...(await runBatch(primaryBatch, true, false)));
-          if (hasTrailingBatch) {
-            startedTaskIds.push(...(await runBatch(trailing, false, true)));
-          }
+          startedTaskIds.forEach((maaTaskId, index) => {
+            const runnable = runnableTasks[index];
+            if (!runnable) return;
+            const { selectedTask, taskDef, specialTask } = runnable;
+            const taskDisplayName =
+              selectedTask.customName ||
+              (specialTask && taskDef.label
+                ? t(taskDef.label)
+                : resolveI18nText(taskDef.label, translations)) ||
+              selectedTask.taskName;
+            registerTaskIdName(maaTaskId, taskDisplayName);
+          });
 
           log.info(`[${instanceName}] 任务已提交, task_ids:`, startedTaskIds);
 
@@ -424,6 +444,7 @@ function InstanceCard({ instanceId, instanceName, isActive, onSelect }: Instance
       registerTaskIdName,
       registerEntryTaskName,
       setShowAddTaskPanel,
+      addLog,
       translations,
       tcpCompatMode,
     ],
@@ -876,7 +897,7 @@ function InstanceCard({ instanceId, instanceName, isActive, onSelect }: Instance
         >
           {/* 卡片容器 */}
           <div
-            className="relative bg-bg-secondary rounded-xl border border-border shadow-2xl max-w-[90vw] max-h-[90vh] flex flex-col overflow-hidden"
+            className="mxu-overlay-surface relative bg-bg-secondary rounded-xl border border-border shadow-2xl max-w-[90vw] max-h-[90vh] flex flex-col overflow-hidden"
             onClick={(e) => e.stopPropagation()}
             onContextMenu={handleContextMenu}
           >

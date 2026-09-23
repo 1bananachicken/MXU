@@ -36,8 +36,6 @@ export interface MxuSpecialTaskDefinition {
     | 'Power';
   /** 图标颜色 CSS 类 */
   iconColorClass: string;
-  /** 是否绕过截图/识别流程的非视觉任务 */
-  skipScreenshot: boolean;
 }
 
 // MXU_SLEEP 特殊任务常量（保留向后兼容）
@@ -468,7 +466,7 @@ const MXU_POWER_TASK_DEF_INTERNAL: TaskItem = {
   },
 };
 
-// MXU_POWER 下拉选项定义（关机/重启/息屏/睡眠）
+// MXU_POWER 下拉选项定义（关机/重启/息屏/睡眠/静音/解除静音）
 const MXU_POWER_OPTION_DEF_INTERNAL: SelectOption = {
   type: 'select',
   label: 'specialTask.power.optionLabel',
@@ -517,6 +515,28 @@ const MXU_POWER_OPTION_DEF_INTERNAL: SelectOption = {
         },
       },
     },
+    {
+      name: 'mute',
+      label: 'specialTask.power.mute',
+      pipeline_override: {
+        [MXU_POWER_ENTRY]: {
+          custom_action_param: {
+            power_action: 'mute',
+          },
+        },
+      },
+    },
+    {
+      name: 'unmute',
+      label: 'specialTask.power.unmute',
+      pipeline_override: {
+        [MXU_POWER_ENTRY]: {
+          custom_action_param: {
+            power_action: 'unmute',
+          },
+        },
+      },
+    },
   ],
   default_case: 'shutdown',
 };
@@ -543,7 +563,6 @@ export const MXU_SPECIAL_TASKS: Record<string, MxuSpecialTaskDefinition> = {
     },
     iconName: 'Timer',
     iconColorClass: 'text-warning/80',
-    skipScreenshot: true,
   },
   [MXU_WAITUNTIL_TASK_NAME]: {
     taskName: MXU_WAITUNTIL_TASK_NAME,
@@ -554,7 +573,6 @@ export const MXU_SPECIAL_TASKS: Record<string, MxuSpecialTaskDefinition> = {
     },
     iconName: 'Clock',
     iconColorClass: 'text-accent/80',
-    skipScreenshot: true,
   },
   [MXU_NOTIFY_TASK_NAME]: {
     taskName: MXU_NOTIFY_TASK_NAME,
@@ -565,7 +583,6 @@ export const MXU_SPECIAL_TASKS: Record<string, MxuSpecialTaskDefinition> = {
     },
     iconName: 'MessageSquare',
     iconColorClass: 'text-info/80',
-    skipScreenshot: true,
   },
   [MXU_LAUNCH_TASK_NAME]: {
     taskName: MXU_LAUNCH_TASK_NAME,
@@ -579,7 +596,6 @@ export const MXU_SPECIAL_TASKS: Record<string, MxuSpecialTaskDefinition> = {
     },
     iconName: 'Play',
     iconColorClass: 'text-success/80',
-    skipScreenshot: true,
   },
   [MXU_KILLPROC_TASK_NAME]: {
     taskName: MXU_KILLPROC_TASK_NAME,
@@ -591,7 +607,6 @@ export const MXU_SPECIAL_TASKS: Record<string, MxuSpecialTaskDefinition> = {
     },
     iconName: 'XCircle',
     iconColorClass: 'text-error/80',
-    skipScreenshot: true,
   },
   [MXU_POWER_TASK_NAME]: {
     taskName: MXU_POWER_TASK_NAME,
@@ -602,7 +617,6 @@ export const MXU_SPECIAL_TASKS: Record<string, MxuSpecialTaskDefinition> = {
     },
     iconName: 'Power',
     iconColorClass: 'text-warning/80',
-    skipScreenshot: true,
   },
   [MXU_WEBHOOK_TASK_NAME]: {
     taskName: MXU_WEBHOOK_TASK_NAME,
@@ -613,7 +627,6 @@ export const MXU_SPECIAL_TASKS: Record<string, MxuSpecialTaskDefinition> = {
     },
     iconName: 'Bell',
     iconColorClass: 'text-accent/80',
-    skipScreenshot: true,
   },
 };
 
@@ -678,9 +691,15 @@ export function getAllMxuSpecialTasks(): MxuSpecialTaskDefinition[] {
 }
 
 /**
- * 判断是否应跳过截图/识别流程
- * @param taskName 任务名称
+ * 获取所有 MXU 特殊任务参数列表
+ * @returns 特殊任务参数记录
  */
-export function shouldSkipMxuScreenshot(taskName: string): boolean {
-  return MXU_SPECIAL_TASKS[taskName]?.skipScreenshot ?? false;
+export function getAllMxuSpecialTasksOptions(): Record<string, OptionDefinition> {
+  let rec: Record<string, OptionDefinition> = {};
+  getAllMxuSpecialTasks().forEach((specialTask) => {
+    Object.entries(specialTask.optionDefs).forEach((t) => {
+      rec[t[0]] = t[1];
+    });
+  });
+  return rec;
 }
